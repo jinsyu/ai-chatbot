@@ -3,7 +3,7 @@ import {
   extractReasoningMiddleware,
   wrapLanguageModel,
 } from 'ai';
-import { xai } from '@ai-sdk/xai';
+import { createAzure } from '@ai-sdk/azure';
 import {
   artifactModel,
   chatModel,
@@ -11,6 +11,15 @@ import {
   titleModel,
 } from './models.test';
 import { isTestEnvironment } from '../constants';
+
+// Azure OpenAI 설정
+const azure = createAzure({
+  apiKey: process.env.AZURE_OPENAI_API_KEY,
+  resourceName: 'aoai-bo-dev-2025', // Azure resource name from the endpoint
+  // apiVersion: '2024-12-01-preview',
+});
+
+const deploymentName = process.env.AZURE_OPENAI_DEPLOYMENT_NAME || 'gpt-4o';
 
 export const myProvider = isTestEnvironment
   ? customProvider({
@@ -23,15 +32,12 @@ export const myProvider = isTestEnvironment
     })
   : customProvider({
       languageModels: {
-        'chat-model': xai('grok-2-vision-1212'),
+        'chat-model': azure(deploymentName),
         'chat-model-reasoning': wrapLanguageModel({
-          model: xai('grok-3-mini-beta'),
+          model: azure(deploymentName),
           middleware: extractReasoningMiddleware({ tagName: 'think' }),
         }),
-        'title-model': xai('grok-2-1212'),
-        'artifact-model': xai('grok-2-1212'),
-      },
-      imageModels: {
-        'small-model': xai.imageModel('grok-2-image'),
+        'title-model': azure(deploymentName),
+        'artifact-model': azure(deploymentName),
       },
     });
