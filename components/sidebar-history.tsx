@@ -1,11 +1,11 @@
-'use client';
+"use client";
 
-import { isToday, isYesterday, subMonths, subWeeks } from 'date-fns';
-import { useParams, useRouter } from 'next/navigation';
-import type { User } from 'next-auth';
-import { useState } from 'react';
-import { toast } from 'sonner';
-import { motion } from 'framer-motion';
+import { isToday, isYesterday, subMonths, subWeeks } from "date-fns";
+import { useParams, useRouter } from "next/navigation";
+import type { User } from "next-auth";
+import { useState } from "react";
+import { toast } from "sonner";
+import { motion } from "framer-motion";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -15,18 +15,18 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
+} from "@/components/ui/alert-dialog";
 import {
   SidebarGroup,
   SidebarGroupContent,
   SidebarMenu,
   useSidebar,
-} from '@/components/ui/sidebar';
-import type { Chat } from '@/lib/db/schema';
-import { fetcher } from '@/lib/utils';
-import { ChatItem } from './sidebar-history-item';
-import useSWRInfinite from 'swr/infinite';
-import { LoaderIcon } from './icons';
+} from "@/components/ui/sidebar";
+import type { Chat } from "@/lib/db/schema";
+import { fetcher } from "@/lib/utils";
+import { ChatItem } from "./sidebar-history-item";
+import useSWRInfinite from "swr/infinite";
+import { LoaderIcon } from "./icons";
 
 type GroupedChats = {
   today: Chat[];
@@ -72,13 +72,13 @@ const groupChatsByDate = (chats: Chat[]): GroupedChats => {
       lastWeek: [],
       lastMonth: [],
       older: [],
-    } as GroupedChats,
+    } as GroupedChats
   );
 };
 
 export function getChatHistoryPaginationKey(
   pageIndex: number,
-  previousPageData: ChatHistory,
+  previousPageData: ChatHistory
 ) {
   if (previousPageData && previousPageData.hasMore === false) {
     return null;
@@ -121,11 +121,11 @@ export function SidebarHistory({ user }: { user: User | undefined }) {
 
   const handleDelete = async () => {
     const deletePromise = fetch(`/api/chat?id=${deleteId}`, {
-      method: 'DELETE',
+      method: "DELETE",
     });
 
     toast.promise(deletePromise, {
-      loading: 'Deleting chat...',
+      loading: "Deleting chat...",
       success: () => {
         mutate((chatHistories) => {
           if (chatHistories) {
@@ -136,15 +136,15 @@ export function SidebarHistory({ user }: { user: User | undefined }) {
           }
         });
 
-        return 'Chat deleted successfully';
+        return "대화가 삭제되었습니다.";
       },
-      error: 'Failed to delete chat',
+      error: "대화 삭제에 실패했습니다.",
     });
 
     setShowDeleteDialog(false);
 
     if (deleteId === id) {
-      router.push('/');
+      router.push("/");
     }
   };
 
@@ -177,7 +177,7 @@ export function SidebarHistory({ user }: { user: User | undefined }) {
                   className="h-4 rounded-md flex-1 max-w-[--skeleton-width] bg-sidebar-accent-foreground/10"
                   style={
                     {
-                      '--skeleton-width': `${item}%`,
+                      "--skeleton-width": `${item}%`,
                     } as React.CSSProperties
                   }
                 />
@@ -194,7 +194,8 @@ export function SidebarHistory({ user }: { user: User | undefined }) {
       <SidebarGroup>
         <SidebarGroupContent>
           <div className="px-2 text-zinc-500 w-full flex flex-row justify-center items-center text-sm gap-2">
-            Your conversations will appear here once you start chatting!
+            대화를 시작하면 여기에 나타납니다.
+            {/* Your conversations will appear here once you start chatting! */}
           </div>
         </SidebarGroupContent>
       </SidebarGroup>
@@ -209,7 +210,7 @@ export function SidebarHistory({ user }: { user: User | undefined }) {
             {paginatedChatHistories &&
               (() => {
                 const chatsFromHistory = paginatedChatHistories.flatMap(
-                  (paginatedChatHistory) => paginatedChatHistory.chats,
+                  (paginatedChatHistory) => paginatedChatHistory.chats
                 );
 
                 const groupedChats = groupChatsByDate(chatsFromHistory);
@@ -219,7 +220,7 @@ export function SidebarHistory({ user }: { user: User | undefined }) {
                     {groupedChats.today.length > 0 && (
                       <div>
                         <div className="px-2 py-1 text-xs text-sidebar-foreground/50">
-                          Today
+                          오늘
                         </div>
                         {groupedChats.today.map((chat) => (
                           <ChatItem
@@ -330,7 +331,8 @@ export function SidebarHistory({ user }: { user: User | undefined }) {
 
           {hasReachedEnd ? (
             <div className="px-2 text-zinc-500 w-full flex flex-row justify-center items-center text-sm gap-2 mt-8">
-              You have reached the end of your chat history.
+              더 이상 대화 기록이 없습니다.
+              {/* You have reached the end of your chat history. */}
             </div>
           ) : (
             <div className="p-2 text-zinc-500 dark:text-zinc-400 flex flex-row gap-2 items-center mt-8">
@@ -346,17 +348,17 @@ export function SidebarHistory({ user }: { user: User | undefined }) {
       <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+            <AlertDialogTitle>정말로 삭제하시겠습니까?</AlertDialogTitle>
             <AlertDialogDescription>
-              This action cannot be undone. This will permanently delete your
-              chat and remove it from our servers.
+              이 작업은 되돌릴 수 없습니다. 이 대화는 영구적으로 삭제되며,
+              서버에서 제거됩니다.
+              {/* This action cannot be undone. This will permanently delete your
+              chat and remove it from our servers. */}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDelete}>
-              Continue
-            </AlertDialogAction>
+            <AlertDialogCancel>취소</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDelete}>계속</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

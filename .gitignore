@@ -41,3 +41,10 @@ yarn-error.log*
 /playwright-report/
 /blob-report/
 /playwright/*
+
+# Uploaded files
+public/uploads/
+
+# Database data
+data/
+./data/

@@ -1,15 +1,15 @@
-'use client';
+"use client";
 
-import { motion } from 'framer-motion';
-import { Button } from './ui/button';
-import { memo } from 'react';
-import type { UseChatHelpers } from '@ai-sdk/react';
-import type { VisibilityType } from './visibility-selector';
-import type { ChatMessage } from '@/lib/types';
+import { motion } from "framer-motion";
+import { Button } from "./ui/button";
+import { memo } from "react";
+import type { UseChatHelpers } from "@ai-sdk/react";
+import type { VisibilityType } from "./visibility-selector";
+import type { ChatMessage } from "@/lib/types";
 
 interface SuggestedActionsProps {
   chatId: string;
-  sendMessage: UseChatHelpers<ChatMessage>['sendMessage'];
+  sendMessage: UseChatHelpers<ChatMessage>["sendMessage"];
   selectedVisibilityType: VisibilityType;
 }
 
@@ -20,24 +20,9 @@ function PureSuggestedActions({
 }: SuggestedActionsProps) {
   const suggestedActions = [
     {
-      title: 'What are the advantages',
-      label: 'of using Next.js?',
-      action: 'What are the advantages of using Next.js?',
-    },
-    {
-      title: 'Write code to',
-      label: `demonstrate djikstra's algorithm`,
-      action: `Write code to demonstrate djikstra's algorithm`,
-    },
-    {
-      title: 'Help me write an essay',
-      label: `about silicon valley`,
-      action: `Help me write an essay about silicon valley`,
-    },
-    {
-      title: 'What is the weather',
-      label: 'in San Francisco?',
-      action: 'What is the weather in San Francisco?',
+      title: "베이스원GPT란?",
+      label: "베이스원GTP에 대해 알려주세요",
+      action: "베이스원GPT에 대하여 자세히 알려주세요",
     },
   ];
 
@@ -53,16 +38,16 @@ function PureSuggestedActions({
           exit={{ opacity: 0, y: 20 }}
           transition={{ delay: 0.05 * index }}
           key={`suggested-action-${suggestedAction.title}-${index}`}
-          className={index > 1 ? 'hidden sm:block' : 'block'}
+          className={index > 1 ? "hidden sm:block" : "block"}
         >
           <Button
             variant="ghost"
             onClick={async () => {
-              window.history.replaceState({}, '', `/chat/${chatId}`);
+              window.history.replaceState({}, "", `/chat/${chatId}`);
 
               sendMessage({
-                role: 'user',
-                parts: [{ type: 'text', text: suggestedAction.action }],
+                role: "user",
+                parts: [{ type: "text", text: suggestedAction.action }],
               });
             }}
             className="text-left border rounded-xl px-4 py-3.5 text-sm flex-1 gap-1 sm:flex-col w-full h-auto justify-start items-start"
@@ -86,5 +71,5 @@ export const SuggestedActions = memo(
       return false;
 
     return true;
-  },
+  }
 );

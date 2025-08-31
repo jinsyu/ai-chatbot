@@ -1,4 +1,5 @@
-import { motion } from 'framer-motion';
+import { motion } from "framer-motion";
+import Image from "next/image";
 
 export const Greeting = () => {
   return (
@@ -10,10 +11,26 @@ export const Greeting = () => {
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: 10 }}
+        transition={{ delay: 0.3 }}
+        className="text-2xl font-semibold"
+      >
+        <Image
+          src="/images/logo.png"
+          alt="dongoh"
+          width={250}
+          height={58}
+          className="mb-4"
+        />
+      </motion.div>
+
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: 10 }}
         transition={{ delay: 0.5 }}
         className="text-2xl font-semibold"
       >
-        Hello there!
+        베이스원GPT입니다.
       </motion.div>
       <motion.div
         initial={{ opacity: 0, y: 10 }}
@@ -22,7 +39,7 @@ export const Greeting = () => {
         transition={{ delay: 0.6 }}
         className="text-2xl text-zinc-500"
       >
-        How can I help you today?
+        무엇을 도와드릴까요?
       </motion.div>
     </div>
   );

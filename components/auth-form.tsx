@@ -1,12 +1,12 @@
-import Form from 'next/form';
+import Form from "next/form";
 
-import { Input } from './ui/input';
-import { Label } from './ui/label';
+import { Input } from "./ui/input";
+import { Label } from "./ui/label";
 
 export function AuthForm({
   action,
   children,
-  defaultEmail = '',
+  defaultEmail = "",
 }: {
   action: NonNullable<
     string | ((formData: FormData) => void | Promise<void>) | undefined
@@ -21,7 +21,8 @@ export function AuthForm({
           htmlFor="email"
           className="text-zinc-600 font-normal dark:text-zinc-400"
         >
-          Email Address
+          이메일 주소
+          {/* Email Address */}
         </Label>
 
         <Input
@@ -42,7 +43,8 @@ export function AuthForm({
           htmlFor="password"
           className="text-zinc-600 font-normal dark:text-zinc-400"
         >
-          Password
+          비밀번호
+          {/* Password */}
         </Label>
 
         <Input

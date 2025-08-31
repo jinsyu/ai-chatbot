@@ -49,18 +49,18 @@ export function PureMessageActions({
                   .trim();
 
                 if (!textFromParts) {
-                  toast.error("There's no text to copy!");
+                  toast.error("복사할 텍스트가 없습니다!");
                   return;
                 }
 
                 await copyToClipboard(textFromParts);
-                toast.success('Copied to clipboard!');
+                toast.success('클립보드에 복사되었습니다!');
               }}
             >
               <CopyIcon />
             </Button>
           </TooltipTrigger>
-          <TooltipContent>Copy</TooltipContent>
+          <TooltipContent>복사</TooltipContent>
         </Tooltip>
 
         <Tooltip>
@@ -81,7 +81,7 @@ export function PureMessageActions({
                 });
 
                 toast.promise(upvote, {
-                  loading: 'Upvoting Response...',
+                  loading: '좋아요 처리 중...',
                   success: () => {
                     mutate<Array<Vote>>(
                       `/api/vote?chatId=${chatId}`,
@@ -104,16 +104,16 @@ export function PureMessageActions({
                       { revalidate: false },
                     );
 
-                    return 'Upvoted Response!';
+                    return '좋아요가 등록되었습니다!';
                   },
-                  error: 'Failed to upvote response.',
+                  error: '좋아요 등록에 실패했습니다.',
                 });
               }}
             >
               <ThumbUpIcon />
             </Button>
           </TooltipTrigger>
-          <TooltipContent>Upvote Response</TooltipContent>
+          <TooltipContent>좋아요</TooltipContent>
         </Tooltip>
 
         <Tooltip>
@@ -134,7 +134,7 @@ export function PureMessageActions({
                 });
 
                 toast.promise(downvote, {
-                  loading: 'Downvoting Response...',
+                  loading: '싫어요 처리 중...',
                   success: () => {
                     mutate<Array<Vote>>(
                       `/api/vote?chatId=${chatId}`,
@@ -157,16 +157,16 @@ export function PureMessageActions({
                       { revalidate: false },
                     );
 
-                    return 'Downvoted Response!';
+                    return '싫어요가 등록되었습니다!';
                   },
-                  error: 'Failed to downvote response.',
+                  error: '싫어요 등록에 실패했습니다.',
                 });
               }}
             >
               <ThumbDownIcon />
             </Button>
           </TooltipTrigger>
-          <TooltipContent>Downvote Response</TooltipContent>
+          <TooltipContent>싫어요</TooltipContent>
         </Tooltip>
       </div>
     </TooltipProvider>

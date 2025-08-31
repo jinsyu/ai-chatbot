@@ -3,27 +3,27 @@ version: '3.8'
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: dongoh-chatbot-postgres
+    container_name: baseone-chatbot-postgres
     environment:
-      POSTGRES_USER: dongoh
-      POSTGRES_PASSWORD: dongoh
-      POSTGRES_DB: dongoh
+      POSTGRES_USER: baseone
+      POSTGRES_PASSWORD: baseone
+      POSTGRES_DB: baseone
     ports:
-      - "10001:5432"
+      - "10003:5432"
     volumes:
       - ./data/postgres:/var/lib/postgresql/data
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U dongoh -d dongoh"]
+      test: ["CMD-SHELL", "pg_isready -U baseone -d baseone"]
       interval: 10s
       timeout: 5s
       retries: 5
 
   redis:
     image: redis:7-alpine
-    container_name: dongoh-chatbot-redis
+    container_name: baseone-chatbot-redis
     ports:
-      - "10002:6379"
+      - "10004:6379"
     volumes:
       - ./data/redis:/data
     restart: unless-stopped

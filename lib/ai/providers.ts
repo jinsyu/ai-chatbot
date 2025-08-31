@@ -11,15 +11,21 @@ import {
   titleModel,
 } from './models.test';
 import { isTestEnvironment } from '../constants';
+import { createOpenAI } from '@ai-sdk/openai';
 
 // Azure OpenAI 설정
 const azure = createAzure({
   apiKey: process.env.AZURE_OPENAI_API_KEY,
   resourceName: 'aoai-bo-dev-2025', // Azure resource name from the endpoint
-  // apiVersion: '2024-12-01-preview',
+  // apiVersion: '2025-01-01-preview', // 이미지 지원을 위한 최신 API 버전
 });
 
-const deploymentName = process.env.AZURE_OPENAI_DEPLOYMENT_NAME || 'gpt-4o';
+const openai = createOpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+  baseURL: 'https://api.openai.com/v1',
+});
+
+const deploymentName = process.env.AZURE_OPENAI_DEPLOYMENT_NAME || 'gpt-4.1';
 
 export const myProvider = isTestEnvironment
   ? customProvider({

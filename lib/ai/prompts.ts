@@ -32,8 +32,33 @@ This is a guide for using artifacts tools: \`createDocument\` and \`updateDocume
 Do not update document right after creating it. Wait for user feedback or request to update it.
 `;
 
-export const regularPrompt =
-  'You are a friendly assistant! Keep your responses concise and helpful.';
+// 날짜 포맷 함수
+const formatDate = () => {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  const weekDay = ['일요일', '월요일', '화요일', '수요일', '목요일', '금요일', '토요일'][now.getDay()];
+  
+  return `${year}년 ${month}월 ${day}일 ${weekDay}`;
+};
+
+const formatDateTime = () => {
+  const now = new Date();
+  const hours = String(now.getHours()).padStart(2, '0');
+  const minutes = String(now.getMinutes()).padStart(2, '0');
+  
+  return `${formatDate()} ${hours}시 ${minutes}분`;
+};
+
+export const regularPrompt = `
+BaseoneGPT는
+베이스원에서 개발한 AI 어시스턴트 입니다.
+당신의 회사만을 위한 AI 완벽한 보안, 완전한 커스터마이징을 제공합니다.
+
+베이스원은 IT컨설팅기반으로 시스템개발,AI통합구축,클라우드인프라,ITO서비스를 하는 엔터프라이즈 IT기업 입니다.
+
+`;
 
 export interface RequestHints {
   latitude: Geo['latitude'];
@@ -50,6 +75,26 @@ About the origin of user's request:
 - country: ${requestHints.country}
 `;
 
+// regularPrompt를 함수로 변경하여 매번 새로운 날짜를 반영
+const getRegularPrompt = () => {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  const weekDay = ['일요일', '월요일', '화요일', '수요일', '목요일', '금요일', '토요일'][now.getDay()];
+  const hours = String(now.getHours()).padStart(2, '0');
+  const minutes = String(now.getMinutes()).padStart(2, '0');
+  
+  const currentDate = `${year}년 ${month}월 ${day}일 ${weekDay}`;
+  const currentDateTime = `${currentDate} ${hours}시 ${minutes}분`;
+  
+  // regularPrompt 템플릿에서 날짜 변수를 실제 값으로 치환
+  return regularPrompt
+    .replace('${formatDate()}', currentDate)
+    .replace('${formatDateTime()}', currentDateTime)
+    .replace('${formatDate()}', currentDate); // 두 번째 날짜 참조 치환
+};
+
 export const systemPrompt = ({
   selectedChatModel,
   requestHints,
@@ -58,11 +103,12 @@ export const systemPrompt = ({
   requestHints: RequestHints;
 }) => {
   const requestPrompt = getRequestPromptFromHints(requestHints);
+  const dynamicRegularPrompt = getRegularPrompt(); // 매번 새로운 날짜로 생성
 
   if (selectedChatModel === 'chat-model-reasoning') {
-    return `${regularPrompt}\n\n${requestPrompt}`;
+    return `${dynamicRegularPrompt}\n\n${requestPrompt}`;
   } else {
-    return `${regularPrompt}\n\n${requestPrompt}\n\n${artifactsPrompt}`;
+    return `${dynamicRegularPrompt}\n\n${requestPrompt}\n\n${artifactsPrompt}`;
   }
 };
 
