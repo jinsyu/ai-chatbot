@@ -92,6 +92,20 @@ export async function saveChat({
   visibility: VisibilityType;
 }) {
   try {
+    // 먼저 사용자가 존재하는지 확인
+    const [existingUser] = await db.select().from(user).where(eq(user.id, userId));
+    
+    if (!existingUser) {
+      console.log(`User ${userId} not found, creating new user...`);
+      // 사용자가 없으면 생성 (guest 사용자로)
+      await db.insert(user).values({
+        id: userId,
+        email: `user-${Date.now()}@baseone.dev`,
+        password: generateHashedPassword(generateUUID()),
+      });
+      console.log(`User ${userId} created successfully`);
+    }
+    
     return await db.insert(chat).values({
       id,
       createdAt: new Date(),
@@ -100,6 +114,8 @@ export async function saveChat({
       visibility,
     });
   } catch (error) {
+    console.error('Failed to save chat:', error);
+    console.error('Chat data:', { id, userId, title, visibility });
     throw new ChatSDKError('bad_request:database', 'Failed to save chat');
   }
 }

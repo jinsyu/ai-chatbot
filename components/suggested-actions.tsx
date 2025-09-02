@@ -21,7 +21,7 @@ function PureSuggestedActions({
   const suggestedActions = [
     {
       title: "베이스원GPT란?",
-      label: "베이스원GTP에 대해 알려주세요",
+      label: "베이스원GPT에 대해 알려주세요",
       action: "베이스원GPT에 대하여 자세히 알려주세요",
     },
   ];

@@ -1,6 +1,41 @@
 import type { ArtifactKind } from '@/components/artifact';
 import type { Geo } from '@vercel/functions';
 
+export const textToSqlPrompt = `
+**IMPORTANT: Database Query Tool Usage**
+
+You have access to a powerful \`textToSql\` tool that can query databases. 
+YOU MUST USE THIS TOOL when users ask about:
+- Database content or statistics
+- User data, chat data, message data
+- Any counting, listing, or data retrieval questions
+- Reports or analytics
+
+Key phrases that indicate you should use \`textToSql\`:
+- "데이터베이스", "DB", "database"
+- "사용자", "유저", "user", "users"
+- "채팅", "chat", "메시지", "message"
+- "몇 명", "how many", "count", "개수"
+- "목록", "list", "show", "보여줘"
+- "통계", "statistics", "분석", "analytics"
+- "최근", "recent", "latest", "newest"
+- "가장", "most", "top", "best"
+
+Examples:
+- "데이터베이스에 사용자가 몇 명 있어?" → USE textToSql
+- "Show me all users" → USE textToSql
+- "최근 가입한 사용자 목록" → USE textToSql
+- "가장 활발한 사용자는?" → USE textToSql
+- "채팅 개수 알려줘" → USE textToSql
+- "오늘 메시지 통계" → USE textToSql
+
+The tool accepts:
+- query: The natural language question about the database
+- maxRows: Optional maximum number of rows to return (default: 1000)
+
+ALWAYS use this tool for database-related questions. Do NOT try to answer from memory.
+`;
+
 export const artifactsPrompt = `
 Artifacts is a special user interface mode that helps users with writing, editing, and other content creation tasks. When artifact is open, it is on the right side of the screen, while the conversation is on the left side. When creating or updating documents, changes are reflected in real-time on the artifacts and visible to the user.
 
@@ -106,9 +141,9 @@ export const systemPrompt = ({
   const dynamicRegularPrompt = getRegularPrompt(); // 매번 새로운 날짜로 생성
 
   if (selectedChatModel === 'chat-model-reasoning') {
-    return `${dynamicRegularPrompt}\n\n${requestPrompt}`;
+    return `${dynamicRegularPrompt}\n\n${requestPrompt}\n\n${textToSqlPrompt}`;
   } else {
-    return `${dynamicRegularPrompt}\n\n${requestPrompt}\n\n${artifactsPrompt}`;
+    return `${dynamicRegularPrompt}\n\n${requestPrompt}\n\n${textToSqlPrompt}\n\n${artifactsPrompt}`;
   }
 };
 
