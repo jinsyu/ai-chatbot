@@ -1,0 +1,1649 @@
+*&---------------------------------------------------------------------*
+*& Report  ZSDR0164
+*&---------------------------------------------------------------------*
+*& PROGRAM      :  ZSDR0164
+*& DESCRIPTION  :  일일 영업 실적 현황_마스터기준
+*& MODULE       :  SD
+*& DEVELOPER    :  SDD02
+*& EXTERNAL REF :
+*& CREATED DATE :  2008.01.24
+*&---------------------------------------------------------------------*
+*& MODIFIED HISTORY :
+*& DEVELOPER     DATE
+*& COM02(송윤호) 20101003
+*& 27차년도 영업매출목표단위가 대리점 -> 지역으로 바뀌어 수정함.20091124
+*& 28차년도 영업매출목표단위가 지역 -> 대리점으로 원복되었음.
+*&---------------------------------------------------------------------*
+
+REPORT  ZSDR0164   MESSAGE-ID ZMSD LINE-SIZE 1000.
+
+INCLUDE ZSDALVTOP.
+INCLUDE ZSDR0164TOP.
+
+*----------------------------------------------------------------------*
+* INITIALIZATION
+*----------------------------------------------------------------------*
+INITIALIZATION.
+  PERFORM INIT_SCREEN.
+
+*----------------------------------------------------------------------*
+* AT SELECTION-SCREEN
+*----------------------------------------------------------------------*
+AT SELECTION-SCREEN OUTPUT.
+  PERFORM MODIFY_SCREEN.
+
+AT SELECTION-SCREEN.
+  PERFORM CHECK_INPUT.
+
+AT SELECTION-SCREEN ON VALUE-REQUEST FOR P_VARINT.
+  PERFORM VARIANT_HELP USING P_VARINT.
+
+*----------------------------------------------------------------------*
+*  START-OF-SELECTION
+*----------------------------------------------------------------------*
+START-OF-SELECTION.
+*  권한체크로직(2021.12)
+  PERFORM CHECK_AUTHORIZATION USING G_ERROR.
+  CHECK G_ERROR IS INITIAL.
+
+
+  PERFORM INIT_DATA.
+  PERFORM SELECT_DATA.
+  PERFORM COLLECT_DATA.
+  IF GT_BASE[] IS INITIAL.
+    MESSAGE S001.
+    EXIT.
+  ENDIF.
+
+  PERFORM MODIFY_DATA.
+
+*----------------------------------------------------------------------*
+*  END-OF-SELECTION
+*----------------------------------------------------------------------*
+END-OF-SELECTION.
+  CHECK G_ERROR IS INITIAL.
+  PERFORM WRITE_DATA.
+
+*&---------------------------------------------------------------------*
+*&      Form  INIT_SCREEN
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+FORM INIT_SCREEN .
+
+  P_AUDAT = SY-DATUM.
+
+*--. ALV Default 변형...
+  PERFORM VARIANT_DEFAULT USING P_VARINT.
+
+ENDFORM.                    " INIT_SCREEN
+*&---------------------------------------------------------------------*
+*&      Form  VARIANT_DEFAULT
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*      -->P_P_VARINT  text
+*----------------------------------------------------------------------*
+FORM VARIANT_DEFAULT  USING P_VARIANT LIKE G_VARIANT-VARIANT.
+
+*--. 레이아웃 변형 조건 관련
+  G_DEFAULT-REPORT = G_VARIANT-REPORT = SY-REPID.
+
+  IF NOT P_VARIANT IS INITIAL.
+    G_DEFAULT-VARIANT = P_VARIANT.
+  ENDIF.
+
+*--. 기본 세팅
+  CALL FUNCTION 'LVC_VARIANT_DEFAULT_GET'
+    EXPORTING
+      I_SAVE        = 'A'
+    CHANGING
+      CS_VARIANT    = G_DEFAULT
+    EXCEPTIONS
+      WRONG_INPUT   = 1
+      NOT_FOUND     = 2
+      PROGRAM_ERROR = 3
+      OTHERS        = 4.
+
+  CASE SY-SUBRC.
+    WHEN 0.
+      P_VARIANT = G_DEFAULT-VARIANT.
+    WHEN 2.
+      CLEAR P_VARIANT.
+*--. 사용자별 세팅
+      SELECT SINGLE VARIANT
+        INTO P_VARIANT
+        FROM LTDX
+       WHERE RELID   EQ 'LT'
+         AND REPORT  EQ SY-REPID
+         AND ERFNAME EQ SY-UNAME.
+  ENDCASE.
+
+ENDFORM.                    " VARIANT_DEFAULT
+*&---------------------------------------------------------------------*
+*&      Form  MODIFY_SCREEN
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+FORM MODIFY_SCREEN .
+
+ENDFORM.                    " MODIFY_SCREEN
+*&---------------------------------------------------------------------*
+*&      Form  CHECK_INPUT
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+FORM CHECK_INPUT .
+
+ENDFORM.                    " CHECK_INPUT
+*&---------------------------------------------------------------------*
+*&      Form  VARIANT_HELP
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*      -->P_P_VARINT  text
+*----------------------------------------------------------------------*
+FORM VARIANT_HELP  USING    P_VARIANT LIKE DISVARIANT-VARIANT.
+
+*--. 레이아웃 변형 조건 F4 기능
+  CALL FUNCTION 'LVC_VARIANT_F4'
+    EXPORTING
+      IS_VARIANT    = G_VARIANT
+      I_SAVE        = 'A'
+    IMPORTING
+      E_EXIT        = G_VARIANT_EXIT
+      ES_VARIANT    = G_DEFAULT
+    EXCEPTIONS
+      NOT_FOUND     = 1
+      PROGRAM_ERROR = 2
+      OTHERS        = 3.
+  IF SY-SUBRC NE 0.
+    MESSAGE I000 WITH '레이아웃 변형이 없습니다.!!'.
+  ENDIF.
+
+  IF G_VARIANT_EXIT IS INITIAL.
+    P_VARIANT = G_VARIANT-VARIANT = G_DEFAULT-VARIANT.
+  ENDIF.
+
+ENDFORM.                    " VARIANT_HELP
+*&---------------------------------------------------------------------*
+*&      Form  INIT_DATA
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+FORM INIT_DATA .
+
+  CLEAR: R_AUDAT, R_AUDAT[].
+  CONCATENATE P_AUDAT(06) '01' INTO R_AUDAT-LOW.
+  R_AUDAT-HIGH   = P_AUDAT.
+  R_AUDAT-SIGN   = 'I'.
+  R_AUDAT-OPTION = 'BT'.
+  APPEND R_AUDAT.  "..CLEAR r_audat.
+
+ENDFORM.                    " INIT_DATA
+*&---------------------------------------------------------------------*
+*&      Form  SELECT_DATA
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+FORM SELECT_DATA .
+
+  CLEAR: GT_BASE,  GT_BASE[],
+         GT_DATA1, GT_DATA1[],
+         GT_DATA2, GT_DATA2[],
+         GT_DATA3, GT_DATA3[],
+         GT_DATA4, GT_DATA4[],
+         GT_DATA5, GT_DATA5[],
+         GT_MAIN,  GT_MAIN[].
+* 20101003 송윤호 기준변경으로 원복
+* 20091124 송윤호 -start
+*         gt_data1t,gt_data1t[].
+* 20091124 송윤호 -start
+
+  PERFORM GET_DATA1.
+  PERFORM GET_DATA2.
+  PERFORM GET_DATA3.
+  PERFORM GET_DATA4.
+  PERFORM GET_DATA5.
+
+ENDFORM.                    " SELECT_DATA
+*&---------------------------------------------------------------------*
+*&      Form  MODIFY_DATA
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+FORM MODIFY_DATA .
+
+  CLEAR: GS_SUM.
+
+  LOOP AT GT_BASE.
+    PERFORM GET_VKGRP_NM(ZSDSINFO)  USING GT_BASE-VKGRP
+                                 CHANGING GT_BASE-BEZEI.
+    PERFORM GET_BZTXT(ZSDSINFO)     USING GT_BASE-BZIRK
+                                 CHANGING GT_BASE-BZTXT.
+*--. 순수매출
+    GT_BASE-NETW6 = GT_BASE-NETW4 - GT_BASE-NETW5.
+*--. 달성율
+    IF GT_BASE-VV005001 IS NOT INITIAL.
+      IF GT_BASE-NETW2 IS NOT INITIAL.
+        GT_BASE-RATE1 = GT_BASE-NETW2 / GT_BASE-VV005001 * 100.
+      ENDIF.
+      IF GT_BASE-NETW4 IS NOT INITIAL.
+        GT_BASE-RATE2 = GT_BASE-NETW4 / GT_BASE-VV005001 * 100.
+      ENDIF.
+      IF GT_BASE-NETW6 IS NOT INITIAL.
+        GT_BASE-RATE3 = GT_BASE-NETW6 / GT_BASE-VV005001 * 100.
+      ENDIF.
+    ENDIF.
+    MODIFY GT_BASE.  CLEAR GT_BASE.
+
+*--. 합계라인
+    AT LAST.
+      SUM.
+      MOVE-CORRESPONDING GT_BASE TO GS_SUM.
+      GS_SUM-VKGRP = 'ZZZ'.
+      GS_SUM-BEZEI = '합계'.
+      PERFORM CALCULATE_SUM_RATE.
+    ENDAT.
+  ENDLOOP.
+
+*--. 합계라인
+  MOVE-CORRESPONDING GS_SUM TO GT_BASE.
+  CLEAR: GT_BASE-BZIRK, GT_BASE-BZTXT.
+  IF P11 = 'X'.
+    GT_BASE-WAERK  = 'KRW'.
+  ELSE.
+    GT_BASE-WAERK  = 'USD'.
+  ENDIF.
+  APPEND GT_BASE.  CLEAR GT_BASE.
+
+*--. 컬럼별 또는 라인별(합계..등등)로 색깔 입히기.
+  PERFORM MOVE_BASE_TO_MAIN.
+
+ENDFORM.                    " MODIFY_DATA
+*&---------------------------------------------------------------------*
+*&      Form  WRITE_DATA
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+FORM WRITE_DATA .
+
+  PERFORM : SET_LAYOUT,
+            SET_EVENT,
+            SET_SORT,
+            SET_COMMENT USING GT_LIST_TOP_OF_PAGE[],
+            SET_FIELDCAT USING GT_FIELDCAT[],
+            ALV_LIST.
+
+ENDFORM.                    " WRITE_DATA
+*&---------------------------------------------------------------------*
+*&      Form  set_layout
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+FORM SET_LAYOUT .
+
+  CLEAR GS_LAYOUT.
+  GS_LAYOUT-COLWIDTH_OPTIMIZE  = 'X'.
+*--. 아래 2개는 동시 적용 안 됨.
+*  gs_layout-zebra              = 'X'.
+  GS_LAYOUT-COLTAB_FIELDNAME   = 'CELCOL'.
+
+*  gs_layout-box_fieldname      = 'MARK'.
+
+ENDFORM.                    " set_layout
+*&---------------------------------------------------------------------*
+*&      Form  set_event
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+FORM SET_EVENT .
+
+  DATA  LS_EVENTS  TYPE SLIS_ALV_EVENT .
+
+  LS_EVENTS-NAME  = 'TOP_OF_PAGE' .
+  LS_EVENTS-FORM  = 'TOP_OF_PAGE' .
+  APPEND  LS_EVENTS TO GT_EVENTS.
+
+  LS_EVENTS-NAME  = 'USER_COMMAND' .
+  LS_EVENTS-FORM  = 'USER_COMMAND' .
+  APPEND  LS_EVENTS TO GT_EVENTS.
+
+ENDFORM.                    " set_event
+*&---------------------------------------------------------------------*
+*&      Form  set_sort
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+FORM SET_SORT .
+
+  DATA: WA_SORT TYPE SLIS_SORTINFO_ALV.
+
+  CLEAR IT_SORT[].
+
+  CLEAR WA_SORT.
+  WA_SORT-FIELDNAME = 'VKGRP'.
+  WA_SORT-UP = 'X'.
+  APPEND WA_SORT TO IT_SORT.
+
+  IF P22 = 'X'.
+    CLEAR WA_SORT.
+    WA_SORT-FIELDNAME = 'BZIRK'.
+    WA_SORT-UP = 'X'.
+    APPEND WA_SORT TO IT_SORT.
+  ENDIF.
+
+ENDFORM.                    " set_sort
+*&---------------------------------------------------------------------*
+*&      Form  set_comment
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*      -->P_GT_LIST_TOP_OF_PAGE[]  text
+*----------------------------------------------------------------------*
+FORM SET_COMMENT  USING IT_HEADER TYPE SLIS_T_LISTHEADER.
+
+  DATA: LS_LINE TYPE SLIS_LISTHEADER,
+        TEXT(80).
+
+  CLEAR IT_HEADER[].
+*--.
+  CLEAR LS_LINE.
+  LS_LINE-TYP  = 'H'.
+  LS_LINE-INFO = '일일 영업 실적 현황_마스터기준'.
+  CONCATENATE LS_LINE-INFO '(' S_BUKRS-LOW ')'
+         INTO LS_LINE-INFO.
+  APPEND LS_LINE TO IT_HEADER.
+
+  CLEAR LS_LINE.
+  LS_LINE-KEY  = '조회일자 :'.
+  LS_LINE-TYP  = 'S'.
+  LS_LINE-INFO = P_AUDAT.
+  APPEND LS_LINE TO IT_HEADER.
+
+ENDFORM.                    " set_comment
+*&---------------------------------------------------------------------*
+*&      Form  set_fieldcat
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*      -->P_GT_FIELDCAT[]  text
+*----------------------------------------------------------------------*
+FORM SET_FIELDCAT  USING RT_FIELDCAT TYPE SLIS_T_FIELDCAT_ALV.
+
+  DATA: LS_FIELDCAT TYPE SLIS_FIELDCAT_ALV.
+  DATA: POS TYPE I.
+
+  CLEAR RT_FIELDCAT[].
+*-
+  DEFINE CATALOG.
+    POS = POS + 1.
+    CLEAR LS_FIELDCAT.
+    LS_FIELDCAT-COL_POS       = POS.
+    LS_FIELDCAT-KEY           = &1.
+    LS_FIELDCAT-FIELDNAME     = &2.
+    LS_FIELDCAT-REF_TABNAME   = &3.
+    LS_FIELDCAT-REF_FIELDNAME = &4.
+    LS_FIELDCAT-REPTEXT_DDIC  = &5.
+*    ls_fieldcat-do_sum        = &6.
+*    ls_fieldcat-outputlen     = &6.
+    LS_FIELDCAT-QFIELDNAME    = &7.
+    LS_FIELDCAT-CFIELDNAME    = &6.
+*    ls_fieldcat-quantity      = &7.
+*    ls_fieldcat-currency      = &7.
+*    ls_fieldcat-datatype      = &9.
+    LS_FIELDCAT-NO_ZERO       = &8.
+    LS_FIELDCAT-HOTSPOT       = &9.
+*    ls_fieldcat-currency       = &9.
+
+    LS_FIELDCAT-SELTEXT_L     = &5.
+    LS_FIELDCAT-SELTEXT_M     = &5.
+    LS_FIELDCAT-SELTEXT_S     = &5.
+    LS_FIELDCAT-DDICTXT       = 'M'.
+
+    APPEND LS_FIELDCAT TO  RT_FIELDCAT.
+  END-OF-DEFINITION.
+
+  CATALOG:
+    ' ' 'VKGRP'    ''   ''     '영업그룹'        ''       '' ' ' ' '   ,
+    ' ' 'BEZEI'    ''   ''     '영업그룹명'      ''       '' ' ' ' '   .
+
+  IF P22 = 'X'.
+    CATALOG:
+    ' ' 'BZIRK'    ''   ''     '판매지역'        ''       '' ' ' ' '   ,
+    ' ' 'BZTXT'    ''   ''     '판매지역명'      ''       '' ' ' ' '   .
+  ENDIF.
+
+  CATALOG:
+    ' ' 'WAERK'    ''   ''     '통화'            ''       '' ' ' ' '   ,
+    ' ' 'VV005001' ''   ''     '월목표'          'WAERK'  '' 'X' ' '   ,
+    ' ' 'NETWR'    ''   ''     '수주_일계'       'WAERK'  '' 'X' ' '   ,
+    ' ' 'NETW2'    ''   ''     '수주_월계'       'WAERK'  '' 'X' ' '   ,
+    ' ' 'RATE1'    ''   ''     '달성율(%)'       ''       '' 'X' ' '   ,
+    ' ' 'NETW3'    ''   ''     '매출_일계'       'WAERK'  '' 'X' ' '   ,
+    ' ' 'NETW4'    ''   ''     '매출_월계'       'WAERK'  '' 'X' ' '   ,
+    ' ' 'RATE2'    ''   ''     '달성율(%)'       ''       '' 'X' ' '   ,
+    ' ' 'NETW5'    ''   ''     '반품_월계'       'WAERK'  '' 'X' ' '   ,
+    ' ' 'NETW6'    ''   ''     '순수매출'        'WAERK'  '' 'X' ' '   ,
+    ' ' 'RATE3'    ''   ''     '달성율(%)'       ''       '' 'X' ' '   .
+
+ENDFORM.                    " set_fieldcat
+*&---------------------------------------------------------------------*
+*&      Form  alv_list
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+FORM ALV_LIST .
+
+  DATA: IS_PRINT TYPE SLIS_PRINT_ALV.
+
+  IS_PRINT-NO_COVERPAGE = 'X'.
+
+  G_REPID = SY-REPID.
+
+*--. 레이아웃 변형 -------------
+  G_VARIANT-REPORT  = SY-REPID.
+  G_VARIANT-VARIANT = P_VARINT.
+*--. 레이아웃 변형 -------------
+
+  CALL FUNCTION 'REUSE_ALV_GRID_DISPLAY'
+       EXPORTING
+            I_CALLBACK_PROGRAM       = G_REPID
+            I_CALLBACK_PF_STATUS_SET = G_STATUS
+            I_CALLBACK_USER_COMMAND  = G_USER_COMMAND
+            IS_LAYOUT                = GS_LAYOUT
+            IT_FIELDCAT              = GT_FIELDCAT
+            IT_SORT                  = IT_SORT
+*           사용자별 LAYOUT 저장
+            I_SAVE                   = 'A'
+*           인쇄시 첫페이지 통계정보 출력 X
+            IS_PRINT                 = IS_PRINT
+            IS_VARIANT               = G_VARIANT
+            IT_EVENTS                = GT_EVENTS
+       TABLES
+            T_OUTTAB                 = GT_MAIN
+*            t_outtab                 = gt_base
+       EXCEPTIONS
+            PROGRAM_ERROR            = 1
+            OTHERS                   = 2.
+
+  CASE SY-SUBRC.
+    WHEN 0.
+    WHEN 1.
+    WHEN 2.
+  ENDCASE.
+
+ENDFORM.                    " alv_list
+*---------------------------------------------------------------------*
+*       FORM PF_STATUS_SET
+*---------------------------------------------------------------------*
+FORM    STATUS   USING   RT_EXTAB   TYPE   SLIS_T_EXTAB.
+
+*--. 별도 copy 요망
+  DATA:W_EXTAB TYPE SLIS_EXTAB.
+  CLEAR RT_EXTAB[].
+*--. 합계.소계 버튼 제외 처리
+  W_EXTAB-FCODE = '&UMC'. APPEND W_EXTAB TO RT_EXTAB.
+  W_EXTAB-FCODE = '&SUM'. APPEND W_EXTAB TO RT_EXTAB.
+  SET   PF-STATUS   'STANDARD'  EXCLUDING  RT_EXTAB.
+
+ENDFORM.                    "pf_status_set
+*&--------------------------------------------------------------------*
+*&      Form  user_command
+*&--------------------------------------------------------------------*
+FORM   USER_COMMAND     USING   R_UCOMM       ".. LIKE  sy-ucomm
+                                RS_SELFIELD   TYPE  SLIS_SELFIELD.
+
+*--. 별도 copy 요망
+  DATA  :   L_ANSWER.
+  CASE      R_UCOMM.
+*    WHEN   '&IC1'.
+*      CASE  rs_selfield-fieldname.
+*        WHEN 'KUNNR'.
+*          READ TABLE gt_base INDEX rs_selfield-tabindex.
+*          CHECK sy-subrc = 0 AND gt_base-kunnr IS NOT INITIAL.
+*          SET PARAMETER ID 'KUN' FIELD gt_base-kunnr.
+*          CALL TRANSACTION 'VD03' AND SKIP FIRST SCREEN.
+*      ENDCASE.
+    WHEN 'REFRESH'.
+      PERFORM REFRESH_PROCESS.
+    WHEN 'BUT1'.
+      PERFORM BUT_PROCESS USING 'P21'.
+    WHEN 'BUT2'.
+      PERFORM BUT_PROCESS USING 'P22'.
+    WHEN 'BUT3'.
+      PERFORM BUT3_PROCESS USING 'P11'.
+    WHEN 'BUT4'.
+      PERFORM BUT3_PROCESS USING 'P12'.
+  ENDCASE.
+
+ENDFORM.                    "user_command
+*&---------------------------------------------------------------------*
+*&      Form  TOP_OF_PAGE
+*&---------------------------------------------------------------------*
+FORM TOP_OF_PAGE.
+
+*--. 별도 copy 요망
+  CALL FUNCTION 'REUSE_ALV_COMMENTARY_WRITE'
+    EXPORTING
+*        i_logo            = 'ENJOYSAP_LOGO'
+         IT_LIST_COMMENTARY = GT_LIST_TOP_OF_PAGE.
+
+ENDFORM.                    "top_of_page
+*&---------------------------------------------------------------------*
+*&      Form  move_base_to_main
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+FORM MOVE_BASE_TO_MAIN .
+
+  LOOP AT GT_BASE.
+    MOVE-CORRESPONDING GT_BASE TO GT_MAIN.
+    IF GT_BASE-VKGRP = 'ZZZ'.
+      PERFORM SET_CELL_COLOR USING    'T'
+                             CHANGING GT_MAIN.
+    ELSE.
+      PERFORM SET_CELL_COLOR USING    'C'
+                             CHANGING GT_MAIN.
+    ENDIF.
+    APPEND GT_MAIN.
+  ENDLOOP.
+
+ENDFORM.                    " move_base_to_main
+*&---------------------------------------------------------------------*
+*&      Form  set_cell_color
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*      -->P_1298   text
+*      <--P_GT_MAIN  text
+*----------------------------------------------------------------------*
+FORM SET_CELL_COLOR  USING  KIND        "" 본문 'C', 합계 'T'
+                  CHANGING  PT_MAIN LIKE GT_MAIN.
+
+  DATA: GS_CELCOL       TYPE SLIS_SPECIALCOL_ALV.
+  DATA: FIELDCATALOG    TYPE SLIS_T_FIELDCAT_ALV,
+        GS_FIELDCATALOG TYPE SLIS_FIELDCAT_ALV.
+
+  REFRESH PT_MAIN-CELCOL.
+  CALL FUNCTION 'REUSE_ALV_FIELDCATALOG_MERGE'
+    EXPORTING
+      I_PROGRAM_NAME     = SY-REPID
+      I_INTERNAL_TABNAME = 'GT_BASE'
+      I_INCLNAME         = SY-REPID
+    CHANGING
+      CT_FIELDCAT        = FIELDCATALOG.
+
+  SORT FIELDCATALOG BY FIELDNAME.
+
+  CLEAR GS_CELCOL.
+  LOOP AT FIELDCATALOG INTO GS_FIELDCATALOG.
+    CHECK GS_FIELDCATALOG-FIELDNAME <> 'MANDT'.
+    GS_CELCOL-COLOR-COL = 2.
+    GS_CELCOL-FIELDNAME = GS_FIELDCATALOG-FIELDNAME.
+    CASE KIND.
+      WHEN 'C'.
+        GS_CELCOL-COLOR-COL = 2.
+      WHEN 'T'.
+        GS_CELCOL-COLOR-COL = 3.
+    ENDCASE.
+    GS_CELCOL-COLOR-INT = 0.
+    GS_CELCOL-COLOR-INV = 0.
+    APPEND GS_CELCOL TO PT_MAIN-CELCOL.
+  ENDLOOP.
+
+  SORT FIELDCATALOG BY COL_POS.
+
+ENDFORM.                    " set_cell_color
+*&---------------------------------------------------------------------*
+*&      Form  GET_DATA1
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+FORM GET_DATA1 .
+
+*--. 월목표 구하기
+  DATA: L_PERIOD LIKE COEP-PERIO,
+        L_YEAR   LIKE T009B-BDATJ,
+        L_PERBL  LIKE CE21000-PERBL,
+        L_VERSI  LIKE CE21000-VERSI.
+
+  CALL FUNCTION 'DETERMINE_PERIOD'
+    EXPORTING
+      DATE    = P_AUDAT
+      VERSION = 'V9'
+    IMPORTING
+      PERIOD  = L_PERIOD
+      YEAR    = L_YEAR.
+
+  CONCATENATE L_YEAR L_PERIOD INTO L_PERBL.
+
+  CASE L_PERIOD.
+    WHEN '001' OR '002' OR '003'.
+      L_VERSI = '014'.
+    WHEN '004' OR '005' OR '006'.
+      L_VERSI = '024'.
+    WHEN '007' OR '008' OR '009'.
+      L_VERSI = '034'.
+    WHEN '010' OR '011' OR '012'.
+      L_VERSI = '044'.
+    WHEN OTHERS.
+      EXIT.
+  ENDCASE.
+
+*  SELECT vkgrp bzirk
+*         SUM( vv005001 ) AS vv005001
+*    INTO CORRESPONDING FIELDS OF TABLE gt_data1
+*    FROM ce21000
+*   WHERE paledger =  '01'
+*     AND vrgar    =  'F'
+*     AND versi    =  l_versi
+*     AND perbl    =  l_perbl
+*     AND vkbur    IN s_vkbur
+*     AND vkgrp    IN s_vkgrp
+*     AND bzirk    IN s_bzirk
+*     AND spart    IN s_spart
+*   GROUP BY vkgrp bzirk
+*   %_HINTS ORACLE 'INDEX(CE21000 "CE21000~Z01")'.
+
+*  20101003 송윤호 - start
+*  20091124 송윤호 - start
+  SELECT VV~VKGRP VV~BZIRK
+         SUM( CE~VV005001 ) AS VV005001
+    INTO CORRESPONDING FIELDS OF TABLE GT_DATA1
+    FROM CE21000 AS CE
+   INNER JOIN MARA AS RA
+      ON RA~MATNR = CE~ARTNR
+   INNER JOIN KNVV AS VV
+      ON VV~KUNNR = CE~KNDNR
+     AND VV~VKORG = CE~VKORG
+     AND VV~VTWEG = CE~VTWEG
+     AND VV~SPART = '00'
+   WHERE CE~PALEDGER =  '01'
+     AND CE~VRGAR    =  'F'
+     AND CE~VERSI    =  L_VERSI
+     AND CE~PERBL    =  L_PERBL
+     AND CE~VKBUR    =  P_VKBUR
+     AND CE~BUKRS    IN S_BUKRS
+     AND CE~VKORG    IN S_VKORG
+     AND VV~VKGRP    IN S_VKGRP
+     AND VV~BZIRK    IN S_BZIRK
+     AND RA~SPART    IN S_SPART
+   GROUP BY VV~VKGRP VV~BZIRK
+   %_HINTS ORACLE 'INDEX(CE21000 "CE21000~Z01")'.
+
+*  SELECT ce~bzirk
+*         SUM( ce~vv005001 ) AS vv005001
+*     INTO CORRESPONDING FIELDS OF TABLE gt_data1t
+*    FROM ce21000 AS ce
+*   INNER JOIN mara AS ra
+*      ON ra~matnr = ce~artnr
+*   WHERE ce~paledger =  '01'
+*     AND ce~vrgar    =  'F'
+*     AND ce~versi    =  l_versi
+*     AND ce~perbl    =  l_perbl
+*     AND ce~vkbur    =  P_VKBUR    "IN s_vkbur
+*     AND ce~bzirk    IN s_bzirk
+*     AND ra~spart    IN s_spart
+*     GROUP BY ce~bzirk
+*     %_HINTS ORACLE 'INDEX(CE21000 "CE21000~Z01")'.
+*  20091124 송윤호 - end
+*  20101003 송윤호 - end
+
+  DELETE GT_DATA1 WHERE VV005001 = 0.
+
+ENDFORM.                                                    " GET_DATA1
+*&---------------------------------------------------------------------*
+*&      Form  GET_DATA2
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+FORM GET_DATA2 .
+  DATA: LT_DATA2     LIKE TABLE OF GT_DATA2  WITH HEADER LINE.
+
+*--. 수주_일계 구하기
+*--. 조회하는 사업장이 E100 이면 조회기간을 납품요청일로 비교
+*--. 조회하는 사업장이 E100 이 아니면 조회기간을 증빙일로 비교
+*--. 반품은 별도로 매출반품(반품월계)만 보여줌,
+*  IF s_vkbur-low = 'E100'.
+*    SELECT ak~auart ak~vkgrp kd~bzirk kd~prsdt ap~waerk
+*           SUM( ap~netwr ) AS netwr
+*      INTO CORRESPONDING FIELDS OF TABLE gt_data2
+*      FROM vbak AS ak
+*     INNER JOIN vbkd AS kd
+*        ON kd~vbeln = ak~vbeln
+*       AND kd~posnr = '000000'
+*     INNER JOIN vbap AS ap
+*        ON ap~vbeln = ak~vbeln
+*     WHERE ak~vdatu =  p_audat
+*       AND ak~vkbur IN s_vkbur
+*       AND ak~vkgrp IN s_vkgrp
+*       AND kd~bzirk IN s_bzirk
+*       AND ap~spart IN s_spart
+*       AND ak~auart IN ('ZDR', 'ZOR1','ZOR3','ZEOR','ZELC',
+*                        'ZETP','ZES1','ZETS','ZCR', 'ZEIP',
+*                        'ZDKB')
+*       AND ap~abgru =  space
+*     GROUP BY ak~auart ak~vkgrp kd~bzirk kd~prsdt ap~waerk.
+*  ELSE.
+*    SELECT ak~auart ak~vkgrp kd~bzirk kd~prsdt ap~waerk
+*           SUM( ap~netwr ) AS netwr
+*      INTO CORRESPONDING FIELDS OF TABLE gt_data2
+*      FROM vbak AS ak
+*     INNER JOIN vbkd AS kd
+*        ON kd~vbeln = ak~vbeln
+*       AND kd~posnr = '000000'
+*     INNER JOIN vbap AS ap
+*        ON ap~vbeln = ak~vbeln
+*     WHERE ak~audat =  p_audat
+*       AND ak~vkbur IN s_vkbur
+*       AND ak~vkgrp IN s_vkgrp
+*       AND kd~bzirk IN s_bzirk
+*       AND ap~spart IN s_spart
+*       AND ak~auart IN ('ZDR', 'ZOR1','ZOR3','ZEOR','ZELC',
+*                        'ZETP','ZES1','ZETS','ZCR', 'ZEIP',
+*                        'ZDKB')
+*       AND ap~abgru =  space
+*     GROUP BY ak~auart ak~vkgrp kd~bzirk kd~prsdt ap~waerk.
+*  ENDIF.
+
+  IF P_VKBUR = 'E100'.
+*--. 납품처기준
+    SELECT AK~AUART VV~VKGRP VV~BZIRK KD~PRSDT AP~WAERK
+           SUM( AP~NETWR ) AS NETWR
+      INTO CORRESPONDING FIELDS OF TABLE GT_DATA2
+      FROM VBAK AS AK
+     INNER JOIN VBKD AS KD
+        ON KD~VBELN = AK~VBELN
+       AND KD~POSNR = '000000'
+     INNER JOIN VBAP AS AP
+        ON AP~VBELN = AK~VBELN
+     INNER JOIN VBPA AS PA
+        ON PA~VBELN = AK~VBELN
+       AND PA~POSNR = '000000'
+       AND PA~PARVW = 'WE'
+     INNER JOIN MARA AS RA
+        ON RA~MATNR = AP~MATNR
+     INNER JOIN KNVV AS VV
+        ON VV~KUNNR = PA~KUNNR
+       AND VV~VKORG = AK~VKORG
+       AND VV~VTWEG = AK~VTWEG
+       AND VV~SPART = AK~SPART
+     WHERE AK~VDATU =  P_AUDAT
+       AND AK~VKBUR =  P_VKBUR
+       AND AK~VKORG IN S_VKORG
+       AND AK~BUKRS_VF IN S_BUKRS
+       AND VV~VKGRP IN S_VKGRP
+       AND VV~BZIRK IN S_BZIRK
+       AND RA~SPART IN S_SPART
+       AND AK~AUART IN ('ZDR', 'ZOR1','ZOR3','ZEOR','ZELC',
+                        'ZETP','ZES1','ZETS','ZCR', 'ZEIP',
+                        'ZDKB','ZOR2','ZOR4')
+       AND AP~ABGRU =  SPACE
+     GROUP BY AK~AUART VV~VKGRP VV~BZIRK KD~PRSDT AP~WAERK.
+  ELSE.
+*--. 판매처기준
+    SELECT AK~AUART VV~VKGRP VV~BZIRK KD~PRSDT AP~WAERK
+           SUM( AP~NETWR ) AS NETWR
+      INTO CORRESPONDING FIELDS OF TABLE GT_DATA2
+      FROM VBAK AS AK
+     INNER JOIN VBKD AS KD
+        ON KD~VBELN = AK~VBELN
+       AND KD~POSNR = '000000'
+     INNER JOIN VBAP AS AP
+        ON AP~VBELN = AK~VBELN
+     INNER JOIN MARA AS RA
+        ON RA~MATNR = AP~MATNR
+     INNER JOIN KNVV AS VV
+        ON VV~KUNNR = AK~KUNNR
+       AND VV~VKORG = AK~VKORG
+       AND VV~VTWEG = AK~VTWEG
+       AND VV~SPART = AK~SPART
+     WHERE AK~AUDAT =  P_AUDAT
+       AND AK~VKBUR =  P_VKBUR
+       AND AK~VKORG IN S_VKORG
+       AND AK~BUKRS_VF IN S_BUKRS
+       AND VV~VKGRP IN S_VKGRP
+       AND VV~BZIRK IN S_BZIRK
+       AND RA~SPART IN S_SPART
+       AND AK~AUART IN ('ZDR', 'ZOR1','ZOR3','ZEOR','ZELC',
+                        'ZETP','ZES1','ZETS','ZCR', 'ZEIP',
+                        'ZDKB','ZOR2','ZOR4')
+       AND AP~ABGRU =  SPACE
+     GROUP BY AK~AUART VV~VKGRP VV~BZIRK KD~PRSDT AP~WAERK.
+
+    SELECT AK~AUART AK~VKGRP KD~BZIRK KD~PRSDT AP~WAERK
+           AP~NETWR
+      INTO CORRESPONDING FIELDS OF TABLE LT_DATA2
+      FROM VBAK AS AK INNER JOIN VBAP AS AP
+        ON AK~VBELN = AP~VBELN
+                      INNER JOIN VBKD AS KD
+        ON AK~VBELN = KD~VBELN
+       AND KD~POSNR = SPACE
+     WHERE AK~AUDAT = P_AUDAT
+       AND AK~VKBUR = P_VKBUR
+       AND AK~VKORG IN S_VKORG
+       AND AK~BUKRS_VF IN S_BUKRS
+       AND AK~VKGRP IN S_VKGRP
+       AND KD~BZIRK IN S_BZIRK
+       AND AP~SPART IN S_SPART
+       AND AK~AUART = 'ZPS1'
+       AND AP~ABGRU =  SPACE.
+    LOOP AT LT_DATA2.
+      CLEAR: GT_DATA2.
+      GT_DATA2 = LT_DATA2.  COLLECT GT_DATA2.
+    ENDLOOP.
+  ENDIF.
+
+ENDFORM.                                                    " GET_DATA2
+*&---------------------------------------------------------------------*
+*&      Form  GET_DATA3
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+FORM GET_DATA3 .
+  DATA: LT_DATA3   LIKE TABLE OF GT_DATA3 WITH HEADER LINE.
+
+*--. 수주_월계 구하기
+*--. 조회하는 사업장이 E100 이면 조회기간을 납품요청일로 비교
+*--. 조회하는 사업장이 E100 이 아니면 조회기간을 증빙일로 비교
+*--. 반품은 별도로 매출반품(반품월계)만 보여줌,
+*  IF s_vkbur-low = 'E100'.
+*    SELECT ak~auart ak~vkgrp kd~bzirk kd~prsdt ap~waerk
+*           SUM( ap~netwr ) AS netwr
+*      INTO CORRESPONDING FIELDS OF TABLE gt_data3
+*      FROM vbak AS ak
+*     INNER JOIN vbkd AS kd
+*        ON kd~vbeln = ak~vbeln
+*       AND kd~posnr = '000000'
+*     INNER JOIN vbap AS ap
+*        ON ap~vbeln = ak~vbeln
+*     WHERE ak~vdatu IN r_audat
+*       AND ak~vkbur IN s_vkbur
+*       AND ak~vkgrp IN s_vkgrp
+*       AND kd~bzirk IN s_bzirk
+*       AND ap~spart IN s_spart
+*       AND ak~auart IN ('ZDR', 'ZOR1','ZOR3','ZEOR','ZELC',
+*                        'ZETP','ZES1','ZETS','ZCR', 'ZEIP',
+*                        'ZDKB')
+*       AND ap~abgru =  space
+*     GROUP BY ak~auart ak~vkgrp kd~bzirk kd~prsdt ap~waerk.
+*  ELSE.
+*    SELECT ak~auart ak~vkgrp kd~bzirk kd~prsdt ap~waerk
+*           SUM( ap~netwr ) AS netwr
+*      INTO CORRESPONDING FIELDS OF TABLE gt_data3
+*      FROM vbak AS ak
+*     INNER JOIN vbkd AS kd
+*        ON kd~vbeln = ak~vbeln
+*       AND kd~posnr = '000000'
+*     INNER JOIN vbap AS ap
+*        ON ap~vbeln = ak~vbeln
+*     WHERE ak~audat IN r_audat
+*       AND ak~vkbur IN s_vkbur
+*       AND ak~vkgrp IN s_vkgrp
+*       AND kd~bzirk IN s_bzirk
+*       AND ap~spart IN s_spart
+*       AND ak~auart IN ('ZDR', 'ZOR1','ZOR3','ZEOR','ZELC',
+*                        'ZETP','ZES1','ZETS','ZCR', 'ZEIP',
+*                        'ZDKB')
+*       AND ap~abgru =  space
+*     GROUP BY ak~auart ak~vkgrp kd~bzirk kd~prsdt ap~waerk.
+*  ENDIF.
+
+  IF P_VKBUR = 'E100'.
+*--. 납품처기준
+    SELECT AK~AUART VV~VKGRP VV~BZIRK KD~PRSDT AP~WAERK
+           SUM( AP~NETWR ) AS NETWR
+      INTO CORRESPONDING FIELDS OF TABLE GT_DATA3
+      FROM VBAK AS AK
+     INNER JOIN VBKD AS KD
+        ON KD~VBELN = AK~VBELN
+       AND KD~POSNR = '000000'
+     INNER JOIN VBAP AS AP
+        ON AP~VBELN = AK~VBELN
+     INNER JOIN VBPA AS PA
+        ON PA~VBELN = AK~VBELN
+       AND PA~POSNR = '000000'
+       AND PA~PARVW = 'WE'
+     INNER JOIN MARA AS RA
+        ON RA~MATNR = AP~MATNR
+     INNER JOIN KNVV AS VV
+        ON VV~KUNNR = PA~KUNNR
+       AND VV~VKORG = AK~VKORG
+       AND VV~VTWEG = AK~VTWEG
+       AND VV~SPART = AK~SPART
+     WHERE AK~VDATU IN R_AUDAT
+       AND AK~VKBUR =  P_VKBUR
+       AND AK~VKORG IN S_VKORG
+       AND AK~BUKRS_VF IN S_BUKRS
+       AND VV~VKGRP IN S_VKGRP
+       AND VV~BZIRK IN S_BZIRK
+       AND RA~SPART IN S_SPART
+       AND AK~AUART IN ('ZDR', 'ZOR1','ZOR3','ZEOR','ZELC',
+                        'ZETP','ZES1','ZETS','ZCR', 'ZEIP',
+                        'ZDKB','ZOR2','ZOR4')
+       AND AP~ABGRU =  SPACE
+     GROUP BY AK~AUART VV~VKGRP VV~BZIRK KD~PRSDT AP~WAERK.
+  ELSE.
+*--. 판매처기준
+    SELECT AK~AUART VV~VKGRP VV~BZIRK KD~PRSDT AP~WAERK
+           SUM( AP~NETWR ) AS NETWR
+      INTO CORRESPONDING FIELDS OF TABLE GT_DATA3
+      FROM VBAK AS AK
+     INNER JOIN VBKD AS KD
+        ON KD~VBELN = AK~VBELN
+       AND KD~POSNR = '000000'
+     INNER JOIN VBAP AS AP
+        ON AP~VBELN = AK~VBELN
+     INNER JOIN MARA AS RA
+        ON RA~MATNR = AP~MATNR
+     INNER JOIN KNVV AS VV
+        ON VV~KUNNR = AK~KUNNR
+       AND VV~VKORG = AK~VKORG
+       AND VV~VTWEG = AK~VTWEG
+       AND VV~SPART = AK~SPART
+     WHERE AK~AUDAT IN R_AUDAT
+       AND AK~VKBUR =  P_VKBUR
+       AND AK~VKORG IN S_VKORG
+       AND AK~BUKRS_VF IN S_BUKRS
+       AND VV~VKGRP IN S_VKGRP
+       AND VV~BZIRK IN S_BZIRK
+       AND RA~SPART IN S_SPART
+       AND AK~AUART IN ('ZDR', 'ZOR1','ZOR3','ZEOR','ZELC',
+                        'ZETP','ZES1','ZETS','ZCR', 'ZEIP',
+                        'ZDKB','ZOR2','ZOR4')
+       AND AP~ABGRU =  SPACE
+     GROUP BY AK~AUART VV~VKGRP VV~BZIRK KD~PRSDT AP~WAERK.
+    SELECT AK~AUART AK~VKGRP KD~BZIRK KD~PRSDT AP~WAERK AP~NETWR
+      INTO CORRESPONDING FIELDS OF TABLE LT_DATA3
+      FROM VBAK AS AK INNER JOIN VBAP AS AP
+        ON AK~VBELN = AP~VBELN
+                      INNER JOIN VBKD AS KD
+        ON AK~VBELN = KD~VBELN
+       AND KD~POSNR = SPACE
+     WHERE AK~AUDAT IN R_AUDAT
+       AND AK~VKBUR =  P_VKBUR
+       AND AK~VKGRP IN S_VKGRP
+       AND AK~VKORG IN S_VKORG
+       AND AK~BUKRS_VF IN S_BUKRS
+       AND KD~BZIRK IN S_BZIRK
+       AND AP~SPART IN S_SPART
+       AND AK~AUART = 'ZPS1'
+       AND AP~ABGRU = SPACE .
+    LOOP AT LT_DATA3.
+      CLEAR: GT_DATA3.
+      GT_DATA3 = LT_DATA3.  COLLECT GT_DATA3.
+    ENDLOOP.
+  ENDIF.
+
+ENDFORM.                                                    " GET_DATA3
+*&---------------------------------------------------------------------*
+*&      Form  GET_DATA4
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+FORM GET_DATA4 .
+  DATA: LT_DATA4      LIKE TABLE OF GT_DATA4   WITH HEADER LINE.
+
+*--. 매출_일계 구하기
+*  SELECT rk~fkart rp~vkgrp rp~bzirk_auft AS bzirk
+*         rk~kurrf_dat AS prsdt rk~waerk
+*         SUM( rp~netwr ) AS netwr
+*    INTO CORRESPONDING FIELDS OF TABLE gt_data4
+*    FROM vbrk AS rk
+*   INNER JOIN vbrp AS rp
+*      ON rp~vbeln = rk~vbeln
+*   WHERE rk~fkdat      =  p_audat
+*     AND rk~fkart      IN ('ZF2','ZF3','ZG2','ZL2')
+*     AND rk~fksto      =  space
+*     AND rk~sfakn      =  space
+*     AND rp~vkbur      IN s_vkbur
+*     AND rp~vkgrp      IN s_vkgrp
+*     AND rp~bzirk_auft IN s_bzirk
+*     AND rp~spart      IN s_spart
+*   GROUP BY rk~fkart rp~vkgrp rp~bzirk_auft rk~kurrf_dat rk~waerk.
+
+  IF P_VKBUR = 'E100'.
+*--. 납품처기준
+    SELECT RK~FKART VV~VKGRP VV~BZIRK RK~KURRF_DAT AS PRSDT RK~WAERK
+           SUM( RP~NETWR ) AS NETWR
+      INTO CORRESPONDING FIELDS OF TABLE GT_DATA4
+      FROM VBRK AS RK
+     INNER JOIN VBRP AS RP
+        ON RP~VBELN = RK~VBELN
+     INNER JOIN VBAK AS AK
+        ON AK~VBELN = RP~AUBEL
+     INNER JOIN VBPA AS PA
+        ON PA~VBELN = AK~VBELN
+       AND PA~POSNR = '000000'
+       AND PA~PARVW = 'WE'
+     INNER JOIN MARA AS RA
+        ON RA~MATNR = RP~MATNR
+     INNER JOIN KNVV AS VV
+        ON VV~KUNNR = PA~KUNNR
+       AND VV~VKORG = RK~VKORG
+       AND VV~VTWEG = RK~VTWEG
+       AND VV~SPART = RK~SPART
+     WHERE RK~FKDAT      =  P_AUDAT
+       AND RK~FKART      IN ('ZF2','ZF3','ZG2','ZL2','ZF1')
+       AND RK~FKSTO      =  SPACE
+       AND RK~SFAKN      =  SPACE
+       AND RP~VKBUR      =  P_VKBUR
+       AND RK~VKORG IN S_VKORG
+       AND RK~BUKRS IN S_BUKRS
+       AND VV~VKGRP      IN S_VKGRP
+       AND VV~BZIRK      IN S_BZIRK
+       AND RA~SPART      IN S_SPART
+     GROUP BY RK~FKART VV~VKGRP VV~BZIRK RK~KURRF_DAT RK~WAERK.
+  ELSE.
+*--. 판매처기준
+    SELECT RK~FKART VV~VKGRP VV~BZIRK RK~KURRF_DAT AS PRSDT RK~WAERK
+           SUM( RP~NETWR ) AS NETWR
+      INTO CORRESPONDING FIELDS OF TABLE GT_DATA4
+      FROM VBRK AS RK
+     INNER JOIN VBRP AS RP
+        ON RP~VBELN = RK~VBELN
+     INNER JOIN MARA AS RA
+        ON RA~MATNR = RP~MATNR
+     INNER JOIN KNVV AS VV
+        ON VV~KUNNR = RK~KUNAG
+       AND VV~VKORG = RK~VKORG
+       AND VV~VTWEG = RK~VTWEG
+       AND VV~SPART = RK~SPART
+     WHERE RK~FKDAT      =  P_AUDAT
+       AND RK~FKART      IN ('ZF2','ZF3','ZG2','ZL2','ZF1')
+       AND RK~FKSTO      =  SPACE
+       AND RK~SFAKN      =  SPACE
+       AND RK~VKORG IN S_VKORG
+       AND RK~BUKRS IN S_BUKRS
+       AND RP~VKBUR      =  P_VKBUR
+       AND VV~VKGRP      IN S_VKGRP
+       AND VV~BZIRK      IN S_BZIRK
+       AND RA~SPART      IN S_SPART
+     GROUP BY RK~FKART VV~VKGRP VV~BZIRK RK~KURRF_DAT RK~WAERK.
+  ENDIF.
+
+*-- 조달 매출일계 구하기
+  IF P_VKBUR = 'R100'.
+    SELECT RK~FKART RP~VKGRP RP~BZIRK_AUFT AS BZIRK
+           RK~KURRF_DAT AS PRSDT RK~WAERK RP~NETWR
+      INTO CORRESPONDING FIELDS OF TABLE LT_DATA4
+      FROM VBRK AS RK INNER JOIN VBRP AS RP
+        ON RK~VBELN = RP~VBELN
+     WHERE RK~FKDAT = P_AUDAT
+       AND RK~FKART = 'ZF4'
+       AND RK~RFBSK = 'C'
+       AND RK~FKSTO = SPACE
+       AND RK~VKORG IN S_VKORG
+       AND RK~BUKRS IN S_BUKRS
+       AND RP~VKBUR = P_VKBUR
+       AND RP~VKGRP IN S_VKGRP
+       AND RP~BZIRK_AUFT IN S_BZIRK
+       AND RP~SPART IN S_SPART.
+    LOOP AT LT_DATA4.
+      GT_DATA4 = LT_DATA4.  COLLECT GT_DATA4.
+    ENDLOOP.
+  ENDIF.
+
+ENDFORM.                                                    " GET_DATA4
+*&---------------------------------------------------------------------*
+*&      Form  GET_DATA5
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+FORM GET_DATA5 .
+  DATA: LT_DATA5    LIKE TABLE OF GT_DATA5  WITH HEADER LINE.
+
+*--. 매출_월계. 반품_월계 구하기
+*  SELECT rk~fkart rp~vkgrp rp~bzirk_auft AS bzirk
+*         rk~kurrf_dat AS prsdt rk~waerk
+*         SUM( rp~netwr ) AS netwr
+*    INTO CORRESPONDING FIELDS OF TABLE gt_data5
+*    FROM vbrk AS rk
+*   INNER JOIN vbrp AS rp
+*      ON rp~vbeln = rk~vbeln
+*   WHERE rk~fkdat      IN r_audat
+*     AND rk~fkart      IN ('ZF2','ZF3','ZG2','ZL2','ZR1','ZR3')
+*     AND rk~fksto      =  space
+*     AND rk~sfakn      =  space
+*     AND rp~vkbur      IN s_vkbur
+*     AND rp~vkgrp      IN s_vkgrp
+*     AND rp~bzirk_auft IN s_bzirk
+*     AND rp~spart      IN s_spart
+*   GROUP BY rk~fkart rp~vkgrp rp~bzirk_auft rk~kurrf_dat rk~waerk.
+
+  IF P_VKBUR = 'E100'.
+*--. 납품처기준
+    SELECT RK~FKART VV~VKGRP VV~BZIRK RK~KURRF_DAT AS PRSDT RK~WAERK
+           SUM( RP~NETWR ) AS NETWR
+      INTO CORRESPONDING FIELDS OF TABLE GT_DATA5
+      FROM VBRK AS RK
+     INNER JOIN VBRP AS RP
+        ON RP~VBELN = RK~VBELN
+     INNER JOIN VBAK AS AK
+        ON AK~VBELN = RP~AUBEL
+     INNER JOIN VBPA AS PA
+        ON PA~VBELN = AK~VBELN
+       AND PA~POSNR = '000000'
+       AND PA~PARVW = 'WE'
+     INNER JOIN MARA AS RA
+        ON RA~MATNR = RP~MATNR
+     INNER JOIN KNVV AS VV
+        ON VV~KUNNR = PA~KUNNR
+       AND VV~VKORG = RK~VKORG
+       AND VV~VTWEG = RK~VTWEG
+       AND VV~SPART = RK~SPART
+     WHERE RK~FKDAT      IN R_AUDAT
+       AND RK~FKART      IN ('ZF2','ZF3','ZG2','ZL2',
+                             'ZR1','ZR3','ZF1')
+       AND RK~FKSTO      =  SPACE
+       AND RK~SFAKN      =  SPACE
+       AND RP~VKBUR      =  P_VKBUR
+       AND RK~VKORG IN S_VKORG
+       AND RK~BUKRS IN S_BUKRS
+       AND VV~VKGRP      IN S_VKGRP
+       AND VV~BZIRK      IN S_BZIRK
+       AND RA~SPART      IN S_SPART
+     GROUP BY RK~FKART VV~VKGRP VV~BZIRK RK~KURRF_DAT RK~WAERK.
+  ELSE.
+*--. 판매처기준
+    SELECT RK~FKART VV~VKGRP VV~BZIRK RK~KURRF_DAT AS PRSDT RK~WAERK
+           SUM( RP~NETWR ) AS NETWR
+      INTO CORRESPONDING FIELDS OF TABLE GT_DATA5
+      FROM VBRK AS RK
+     INNER JOIN VBRP AS RP
+        ON RP~VBELN = RK~VBELN
+     INNER JOIN MARA AS RA
+        ON RA~MATNR = RP~MATNR
+     INNER JOIN KNVV AS VV
+        ON VV~KUNNR = RK~KUNAG
+       AND VV~VKORG = RK~VKORG
+       AND VV~VTWEG = RK~VTWEG
+       AND VV~SPART = RK~SPART
+     WHERE RK~FKDAT      IN R_AUDAT
+       AND RK~FKART      IN ('ZF2','ZF3','ZG2','ZL2',
+                             'ZR1','ZR3','ZF1')
+       AND RK~FKSTO      =  SPACE
+       AND RK~SFAKN      =  SPACE
+       AND RP~VKBUR      =  P_VKBUR
+       AND RK~VKORG IN S_VKORG
+       AND RK~BUKRS IN S_BUKRS
+       AND VV~VKGRP      IN S_VKGRP
+       AND VV~BZIRK      IN S_BZIRK
+       AND RA~SPART      IN S_SPART
+     GROUP BY RK~FKART VV~VKGRP VV~BZIRK RK~KURRF_DAT RK~WAERK.
+  ENDIF.
+
+  SELECT RK~FKART RP~VKGRP RP~BZIRK_AUFT AS BZIRK  RK~WAERK
+         RK~KURRF_DAT AS PRSDT RP~NETWR
+    INTO CORRESPONDING FIELDS OF TABLE LT_DATA5
+    FROM VBRK AS RK INNER JOIN VBRP AS RP
+      ON RK~VBELN = RP~VBELN
+   WHERE RK~FKDAT IN R_AUDAT
+     AND RK~FKART = 'ZF4'
+     AND RK~RFBSK = 'C'
+     AND RK~FKSTO = SPACE
+     AND RP~VKBUR = P_VKBUR
+     AND RK~VKORG IN S_VKORG
+     AND RK~BUKRS IN S_BUKRS
+     AND RP~VKGRP IN S_VKGRP
+     AND RP~BZIRK_AUFT IN S_BZIRK
+     AND RP~SPART IN S_SPART.
+  LOOP AT LT_DATA5.
+    GT_DATA5 = LT_DATA5.  COLLECT GT_DATA5.
+  ENDLOOP.
+
+ENDFORM.                                                    " GET_DATA5
+*&---------------------------------------------------------------------*
+*&      Form  COLLECT_DATA
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+FORM COLLECT_DATA .
+
+  DATA: L_PRSDT LIKE VBKD-PRSDT,
+        L_YEAR(4) TYPE N.
+
+  CLEAR: GT_BASE,  GT_BASE[],
+         GT_MAIN,  GT_MAIN[].
+
+* 20101003 송윤호 - start - 주석처리
+* 20091124 송윤호 - start
+*  PERFORM set_vkgrp.
+* 20091124 송윤호 - end
+* 20101003 송윤호 - end
+
+
+  LOOP AT GT_DATA1.
+*--. 목표는 원화만 있음.
+    GT_BASE-VKGRP    = GT_DATA1-VKGRP.
+    IF P22 = 'X'.
+      GT_BASE-BZIRK  = GT_DATA1-BZIRK.
+    ENDIF.
+    IF P11 = 'X'.
+      GT_BASE-WAERK  = 'KRW'.
+    ELSE.
+      GT_BASE-WAERK  = 'USD'.
+    ENDIF.
+    GT_BASE-VV005001 = GT_DATA1-VV005001.
+    IF P12 = 'X'.
+      CLEAR: L_PRSDT, L_YEAR.
+      IF P_AUDAT+4(2) > '09'.
+        CONCATENATE P_AUDAT(04) '1001' INTO L_PRSDT.
+      ELSE.
+        L_YEAR = P_AUDAT(04).
+        L_YEAR = L_YEAR - 1.
+        CONCATENATE L_YEAR '1001' INTO L_PRSDT.
+      ENDIF.
+      CALL FUNCTION 'CONVERT_TO_FOREIGN_CURRENCY'
+        EXPORTING
+          DATE                    = L_PRSDT
+          FOREIGN_CURRENCY        = GT_BASE-WAERK
+          LOCAL_AMOUNT            = GT_BASE-VV005001
+          LOCAL_CURRENCY          = 'KRW'
+          TYPE_OF_RATE            = 'P'   "..계획
+          READ_TCURR              = 'X'
+        IMPORTING
+*          EXCHANGE_RATE           =
+          FOREIGN_AMOUNT          = GT_BASE-VV005001.
+    ENDIF.
+    COLLECT GT_BASE.  CLEAR GT_BASE.
+  ENDLOOP.
+
+  LOOP AT GT_DATA2.
+    GT_BASE-VKGRP    = GT_DATA2-VKGRP.
+    IF P22 = 'X'.
+      GT_BASE-BZIRK  = GT_DATA2-BZIRK.
+    ENDIF.
+
+    IF GT_DATA2-AUART = 'ZCR'.
+      GT_DATA2-NETWR = GT_DATA2-NETWR * -1.
+    ENDIF.
+
+    IF P11 = 'X'.
+      GT_BASE-WAERK  = 'KRW'.
+      IF GT_BASE-WAERK <> GT_DATA2-WAERK.
+        PERFORM GET_LOCAL_CURRENCY(ZSDSINFO) USING GT_DATA2-PRSDT
+                                                   GT_DATA2-WAERK
+                                                   GT_BASE-WAERK
+                                                   GT_DATA2-NETWR
+                                          CHANGING GT_DATA2-NETWR.
+      ENDIF.
+    ELSE.
+      GT_BASE-WAERK  = 'USD'.
+      IF GT_BASE-WAERK <> GT_DATA2-WAERK.
+        IF GT_DATA2-WAERK <> 'KRW'.
+*--. EUR => USD 처럼 바로 환산불가하므로 원화를 거쳣다가 간다.
+          PERFORM GET_LOCAL_CURRENCY(ZSDSINFO) USING GT_DATA2-PRSDT
+                                                     GT_DATA2-WAERK
+                                                     'KRW'
+                                                     GT_DATA2-NETWR
+                                            CHANGING GT_DATA2-NETWR.
+        ENDIF.
+        PERFORM GET_FOREIGN_CURRENCY(ZSDSINFO) USING GT_DATA2-PRSDT
+                                                     'KRW'
+                                                     GT_BASE-WAERK
+                                                     GT_DATA2-NETWR
+                                            CHANGING GT_DATA2-NETWR.
+      ENDIF.
+    ENDIF.
+
+    GT_BASE-NETWR    = GT_DATA2-NETWR.
+
+    COLLECT GT_BASE.  CLEAR GT_BASE.
+  ENDLOOP.
+
+  LOOP AT GT_DATA3.
+    GT_BASE-VKGRP    = GT_DATA3-VKGRP.
+    IF P22 = 'X'.
+      GT_BASE-BZIRK  = GT_DATA3-BZIRK.
+    ENDIF.
+
+    IF GT_DATA3-AUART = 'ZCR'.
+      GT_DATA3-NETWR = GT_DATA3-NETWR * -1.
+    ENDIF.
+
+    IF P11 = 'X'.
+      GT_BASE-WAERK  = 'KRW'.
+      IF GT_BASE-WAERK <> GT_DATA3-WAERK.
+        PERFORM GET_LOCAL_CURRENCY(ZSDSINFO) USING GT_DATA3-PRSDT
+                                                   GT_DATA3-WAERK
+                                                   GT_BASE-WAERK
+                                                   GT_DATA3-NETWR
+                                          CHANGING GT_DATA3-NETWR.
+      ENDIF.
+    ELSE.
+      GT_BASE-WAERK  = 'USD'.
+      IF GT_BASE-WAERK <> GT_DATA3-WAERK.
+        IF GT_DATA3-WAERK <> 'KRW'.
+*--. EUR => USD 처럼 바로 환산불가하므로 원화를 거쳣다가 간다.
+          PERFORM GET_LOCAL_CURRENCY(ZSDSINFO) USING GT_DATA3-PRSDT
+                                                     GT_DATA3-WAERK
+                                                     'KRW'
+                                                     GT_DATA3-NETWR
+                                            CHANGING GT_DATA3-NETWR.
+        ENDIF.
+        PERFORM GET_FOREIGN_CURRENCY(ZSDSINFO) USING GT_DATA3-PRSDT
+                                                     'KRW'
+                                                     GT_BASE-WAERK
+                                                     GT_DATA3-NETWR
+                                            CHANGING GT_DATA3-NETWR.
+      ENDIF.
+    ENDIF.
+
+    GT_BASE-NETW2    = GT_DATA3-NETWR.
+
+    COLLECT GT_BASE.  CLEAR GT_BASE.
+  ENDLOOP.
+
+  LOOP AT GT_DATA4.
+    GT_BASE-VKGRP    = GT_DATA4-VKGRP.
+    IF P22 = 'X'.
+      GT_BASE-BZIRK  = GT_DATA4-BZIRK.
+    ENDIF.
+
+    IF GT_DATA4-FKART = 'ZG2'.
+      GT_DATA4-NETWR = GT_DATA4-NETWR * -1.
+    ENDIF.
+
+    IF P11 = 'X'.
+      GT_BASE-WAERK  = 'KRW'.
+      IF GT_BASE-WAERK <> GT_DATA4-WAERK.
+        PERFORM GET_LOCAL_CURRENCY(ZSDSINFO) USING GT_DATA4-PRSDT
+                                                   GT_DATA4-WAERK
+                                                   GT_BASE-WAERK
+                                                   GT_DATA4-NETWR
+                                          CHANGING GT_DATA4-NETWR.
+      ENDIF.
+    ELSE.
+      GT_BASE-WAERK  = 'USD'.
+      IF GT_BASE-WAERK <> GT_DATA4-WAERK.
+        IF GT_DATA4-WAERK <> 'KRW'.
+*--. EUR => USD 처럼 바로 환산불가하므로 원화를 거쳣다가 간다.
+          PERFORM GET_LOCAL_CURRENCY(ZSDSINFO) USING GT_DATA4-PRSDT
+                                                     GT_DATA4-WAERK
+                                                     'KRW'
+                                                     GT_DATA4-NETWR
+                                            CHANGING GT_DATA4-NETWR.
+        ENDIF.
+        PERFORM GET_FOREIGN_CURRENCY(ZSDSINFO) USING GT_DATA4-PRSDT
+                                                     'KRW'
+                                                     GT_BASE-WAERK
+                                                     GT_DATA4-NETWR
+                                            CHANGING GT_DATA4-NETWR.
+      ENDIF.
+    ENDIF.
+
+    GT_BASE-NETW3    = GT_DATA4-NETWR.
+
+    COLLECT GT_BASE.  CLEAR GT_BASE.
+  ENDLOOP.
+
+  LOOP AT GT_DATA5.
+    GT_BASE-VKGRP    = GT_DATA5-VKGRP.
+    IF P22 = 'X'.
+      GT_BASE-BZIRK  = GT_DATA5-BZIRK.
+    ENDIF.
+
+    IF GT_DATA5-FKART = 'ZG2'.
+      GT_DATA5-NETWR = GT_DATA5-NETWR * -1.
+    ENDIF.
+
+    IF P11 = 'X'.
+      GT_BASE-WAERK  = 'KRW'.
+      IF GT_BASE-WAERK <> GT_DATA5-WAERK.
+        PERFORM GET_LOCAL_CURRENCY(ZSDSINFO) USING GT_DATA5-PRSDT
+                                                   GT_DATA5-WAERK
+                                                   GT_BASE-WAERK
+                                                   GT_DATA5-NETWR
+                                          CHANGING GT_DATA5-NETWR.
+      ENDIF.
+    ELSE.
+      GT_BASE-WAERK  = 'USD'.
+      IF GT_BASE-WAERK <> GT_DATA5-WAERK.
+        IF GT_DATA5-WAERK <> 'KRW'.
+*--. EUR => USD 처럼 바로 환산불가하므로 원화를 거쳣다가 간다.
+          PERFORM GET_LOCAL_CURRENCY(ZSDSINFO) USING GT_DATA5-PRSDT
+                                                     GT_DATA5-WAERK
+                                                     'KRW'
+                                                     GT_DATA5-NETWR
+                                            CHANGING GT_DATA5-NETWR.
+        ENDIF.
+        PERFORM GET_FOREIGN_CURRENCY(ZSDSINFO) USING GT_DATA5-PRSDT
+                                                     'KRW'
+                                                     GT_BASE-WAERK
+                                                     GT_DATA5-NETWR
+                                            CHANGING GT_DATA5-NETWR.
+      ENDIF.
+    ENDIF.
+
+    IF GT_DATA5-FKART = 'ZR1' OR GT_DATA5-FKART = 'ZR3'.
+      GT_BASE-NETW5  = GT_DATA5-NETWR.
+    ELSE.
+      GT_BASE-NETW4  = GT_DATA5-NETWR.
+    ENDIF.
+
+    COLLECT GT_BASE.  CLEAR GT_BASE.
+  ENDLOOP.
+
+ENDFORM.                    " COLLECT_DATA
+*&---------------------------------------------------------------------*
+*&      Form  CALCULATE_SUM_RATE
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+FORM CALCULATE_SUM_RATE .
+
+*--. 달성율
+  IF GS_SUM-VV005001 IS NOT INITIAL.
+    IF GS_SUM-NETW2 IS NOT INITIAL.
+      GS_SUM-RATE1 = GS_SUM-NETW2 / GS_SUM-VV005001 * 100.
+    ENDIF.
+    IF GS_SUM-NETW4 IS NOT INITIAL.
+      GS_SUM-RATE2 = GS_SUM-NETW4 / GS_SUM-VV005001 * 100.
+    ENDIF.
+    IF GS_SUM-NETW6 IS NOT INITIAL.
+      GS_SUM-RATE3 = GS_SUM-NETW6 / GS_SUM-VV005001 * 100.
+    ENDIF.
+  ENDIF.
+
+ENDFORM.                    " CALCULATE_SUM_RATE
+*&---------------------------------------------------------------------*
+*&      Form  BUT_PROCESS
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*      -->P_0993   text
+*----------------------------------------------------------------------*
+FORM BUT_PROCESS  USING    P_VALUE.
+
+  CLEAR: P21, P22.
+  IF P_VALUE = 'P21'.
+    P21 = 'X'.
+  ELSE.
+    P22 = 'X'.
+  ENDIF.
+
+  PERFORM: COLLECT_DATA,
+           MODIFY_DATA,
+           WRITE_DATA.
+  LEAVE TO SCREEN 0.
+
+ENDFORM.                    " BUT_PROCESS
+*&---------------------------------------------------------------------*
+*&      Form  BUT3_PROCESS
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*      -->P_1005   text
+*----------------------------------------------------------------------*
+FORM BUT3_PROCESS  USING    P_VALUE.
+
+  CLEAR: P11, P12.
+  IF P_VALUE = 'P11'.
+    P11 = 'X'.
+  ELSE.
+    P12 = 'X'.
+  ENDIF.
+
+  PERFORM: COLLECT_DATA,
+           MODIFY_DATA,
+           WRITE_DATA.
+  LEAVE TO SCREEN 0.
+
+ENDFORM.                    " BUT3_PROCESS
+*&---------------------------------------------------------------------*
+*&      Form  REFRESH_PROCESS
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+FORM REFRESH_PROCESS .
+
+  PERFORM: SELECT_DATA,
+           COLLECT_DATA,
+           MODIFY_DATA,
+           WRITE_DATA.
+
+  LEAVE TO SCREEN 0.
+
+ENDFORM.                    " REFRESH_PROCESS
+*&---------------------------------------------------------------------*
+*&      Form  SET_VKGRP
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+FORM SET_VKGRP .
+*  CLEAR : gt_data1, gt_data1[].
+*  LOOP AT gt_data1t.
+*
+*    CASE gt_data1t-bzirk.
+*      WHEN 'D01' or 'D02' or 'D03' or 'D04'.
+*        gt_data1t-vkgrp = gt_data1t-bzirk.
+*      WHEN 'D05'.
+*        gt_data1t-vkgrp = 'D04'.
+*      WHEN 'D06'.
+*        gt_data1t-vkgrp = 'D03'.
+*      WHEN 'D07' or 'D08' or 'D09' or 'D10'.
+*        gt_data1t-vkgrp = 'D08'.
+*      WHEN 'D11' or 'D12'.
+*        gt_data1t-vkgrp = 'D05'.
+*      WHEN 'D13' or 'D14'.
+*        gt_data1t-vkgrp = 'D06'.
+*      WHEN 'D15' or 'D16' or 'D17'.
+*        gt_data1t-vkgrp = 'D07'.
+*      WHEN 'D18' or 'D19'.
+*        gt_data1t-vkgrp = 'D09'.
+*      WHEN 'E01' or 'E02' or 'E03' or 'E04' or 'E05' or 'E06'.
+*        gt_data1t-vkgrp = gt_data1t-bzirk.
+*
+*    ENDCASE.
+*
+*    MOVE-CORRESPONDING gt_data1t TO gt_data1.
+*    IF gt_data1-vkgrp IN s_vkgrp.
+*      COLLECT gt_data1.
+*    ENDIF.
+*    CLEAR gt_data1.
+*  ENDLOOP.
+
+ENDFORM.                    " SET_VKGRP
+*&---------------------------------------------------------------------*
+*&      Form  CHECK_AUTHORIZATION
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+FORM CHECK_AUTHORIZATION CHANGING P_FLAG.
+
+  DATA : L_SUBRC(1).
+  DATA : LT_VALUES LIKE TABLE OF USVALUES WITH HEADER LINE.
+  DATA : L_OBJECT LIKE USVALUES-OBJCT,
+        L_FIELD LIKE USVALUES-FIELD,
+        L_FLDTXT TYPE STRING.
+  DATA : L_HIGH TYPE BKPF-BUKRS.
+
+  L_FLDTXT = '회사코드'.
+  L_OBJECT = 'F_BKPF_BUK'.
+  L_FIELD = 'BUKRS'.
+
+  PERFORM CHECK_RANGES_VALUES(ZAUTH_CHECK) IF FOUND
+                                           TABLES LT_VALUES
+                                                  S_BUKRS
+                                           USING L_FLDTXT
+                                                 L_OBJECT
+                                                 L_FIELD
+                                           CHANGING P_FLAG.
+
+  CHECK P_FLAG IS INITIAL.
+
+  PERFORM AUTH_CHECK1(ZAUTH_CHECK) USING 'F_BKPF_BUK'
+  'ACTVT' '03'
+  CHANGING L_SUBRC.
+
+  IF L_SUBRC <> 0.
+    MESSAGE S999 WITH '회사코드' S_BUKRS '에 대한 권한이 없습니다.'
+    DISPLAY LIKE 'E'.
+    P_FLAG = 'X'.
+  ENDIF.
+ENDFORM.                    " CHECK_AUTHORIZATION

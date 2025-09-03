@@ -64,6 +64,17 @@ export const textToSql = ({ session, dataStream }: TextToSqlProps) =>
             });
           }
 
+          // 시각화 데이터가 있는 경우 차트 데이터 전송
+          if (result.visualization) {
+            console.log('[Text-to-SQL] Visualization data available:', result.visualization.type);
+            
+            dataStream.write({
+              type: 'data-visualization',
+              data: result.visualization,
+              transient: true,
+            });
+          }
+
           // 결과 테이블 데이터 전송 (Sheet artifact처럼 처리 가능)
           if (result.results && result.results.length > 0) {
             const id = generateUUID();

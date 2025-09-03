@@ -1,0 +1,2383 @@
+*&---------------------------------------------------------------------*
+*& Report  ZSDR0340
+*&---------------------------------------------------------------------*
+*& PROGRAM      :  ZSDR0340
+*& DESCRIPTION  :  국영/해영 기간별 매출 세부내역 레포트_마스터기준
+*& MODULE       :  SD
+*& DEVELOPER    :  MMD01
+*& EXTERNAL REF :
+*& CREATED DATE :  2011.03.18
+*&---------------------------------------------------------------------*
+*& MODIFIED HISTORY :
+*& DEVELOPER     DATE              DESCRIPTION
+*& MMD01         2011.03.18        INITIAL CODING
+*& MMD01         2011.12.29        오더TYPE 추가(ZDKH,ZDKI)
+*& MMD01         2012.01.19        해영 매출 금액 및 월 집계 모델 추가
+*& MMD03         2012.10.19        설계처검색어 필드값 수정
+*& MMD03         2015.01.09        오더사유, PO번호, PO일자 추가
+*&---------------------------------------------------------------------*
+REPORT  zsdr0340 MESSAGE-ID zmsd NO STANDARD PAGE HEADING.
+
+INCLUDE zsdr0340top.
+
+*----------------------------------------------------------------------*
+* INITIALIZATION
+*----------------------------------------------------------------------*
+INITIALIZATION.
+
+  PERFORM init_screen.
+
+
+*----------------------------------------------------------------------*
+* AT SELECTION-SCREEN
+*----------------------------------------------------------------------*
+AT SELECTION-SCREEN OUTPUT.
+  PERFORM modify_screen.
+
+AT SELECTION-SCREEN.
+  " /s/ 2023.05.02 기여도 조회를 위한 Submit 호출
+  " 기존 구문
+*  PERFORM check_input.
+
+  IF p_call IS INITIAL.
+    PERFORM check_input.
+  ENDIF.
+
+AT SELECTION-SCREEN ON VALUE-REQUEST FOR p_varint.
+  PERFORM variant_help USING p_varint.
+
+
+*----------------------------------------------------------------------*
+*  START-OF-SELECTION
+*----------------------------------------------------------------------*
+START-OF-SELECTION.
+*  권한체크로직(2021.12)
+  PERFORM check_authorization USING g_error.
+  CHECK g_error IS INITIAL.
+
+
+  PERFORM select-data.
+  " /s/ 2023.05.02 기여도 조회를 위한 Submit 호출
+
+  " 기존 구문
+*  IF gt_data[] IS INITIAL.
+*    MESSAGE s001.
+*    EXIT.
+*  ENDIF.
+
+
+  IF gt_data[] IS INITIAL.
+    IF p_call IS INITIAL.
+      MESSAGE s001.
+      EXIT.
+    ELSE.
+      EXPORT  gt_340 TO MEMORY ID 'ZSDR0340'.
+      LEAVE PROGRAM.
+    ENDIF.
+  ENDIF.
+
+  " /E/ 2023.05.02 기여도 조회를 위한 Submit 호출
+
+  PERFORM append_data.
+  PERFORM modify_data.
+
+
+*----------------------------------------------------------------------*
+*  END-OF-SELECTION
+*----------------------------------------------------------------------*
+END-OF-SELECTION.
+  CHECK g_error IS INITIAL.
+*  PERFORM write_data.
+
+  " /s/ 2023.05.02 기여도 조회를 위한 Submit 호출
+*    P_CALL = X 이면 ALV Display 하지말고 바로 데이터만 쌓이고 넘김
+
+  IF p_call EQ 'X'.
+    LOOP AT gt_main INTO gs_main.
+      gs_340-vkorg  = gs_main-vkorg.
+      gs_340-vtweg = gs_main-vtweg.
+      gs_340-vkgrp = gs_main-vkgrp.
+      gs_340-bezei = gs_main-bezei.
+      gs_340-kunnr = gs_main-kunnr.
+      gs_340-name1 = gs_main-name1.
+      gs_340-fkdat   = gs_main-fkdat.
+      gs_340-matnr = gs_main-matnr.
+      gs_340-maktx  = gs_main-maktx.
+      gs_340-netwr  = gs_main-netwr.
+      gs_340-waerk = gs_main-waerk.
+      gs_340-matkl =   gs_main-matkl.
+      gs_340-wgbez  = gs_main-wgbez.
+      gs_340-auart  = gs_main-auart.
+      gs_340-vkgr2 = gs_main-vkgr2.
+      gs_340-bezej = gs_main-bezej .
+      gs_340-bzir2 = gs_main-bzir2 .
+      gs_340-bztxj = gs_main-bztxj .
+      gs_340-kunwe = gs_main-kunwe .
+      gs_340-name2 = gs_main-name2 .
+
+      APPEND gs_340 TO gt_340.
+      CLEAR :  gs_340, gs_main.
+    ENDLOOP.
+    EXPORT  gt_340 TO MEMORY ID 'ZSDR0340'.
+  ELSE.
+    PERFORM write_data.
+  ENDIF.
+
+  " /E/ 2023.05.02 기여도 조회를 위한 Submit 호출
+
+
+
+
+
+
+
+*&---------------------------------------------------------------------*
+*&      Form  INIT_SCREEN
+*&---------------------------------------------------------------------*
+FORM init_screen .
+
+  CLEAR: s_fkdat , s_fkdat[].
+  CONCATENATE sy-datum(6) '01' INTO s_fkdat-low.
+  s_fkdat-high   = sy-datum.
+  s_fkdat-sign   = 'I'.
+  s_fkdat-option = 'BT'.
+  APPEND s_fkdat.
+
+ENDFORM.                    " INIT_SCREEN
+
+
+*&---------------------------------------------------------------------*
+*&      Form  MODIFY_SCREEN
+*&---------------------------------------------------------------------*
+FORM modify_screen .
+
+  LOOP AT SCREEN.
+
+    CASE 'X'.
+
+      WHEN  p_radi2.
+        gv_text1 = '월별 검색'."2013.02.25 .
+
+        IF screen-group1 = 'P1'.
+          screen-active = 0.
+          MODIFY SCREEN.
+        ENDIF.
+
+      WHEN  p_radi3.
+        gv_text1 = '누계 검색'."2013.02.25 .
+
+        IF screen-group1 = 'P1'.
+          screen-active = 0.
+          MODIFY SCREEN.
+        ENDIF.
+
+      WHEN  p_radi4.
+        gv_text1 = '주별 검색'."2015.04.24
+
+        IF screen-group1 = 'P1'.
+          screen-active = 0.
+          MODIFY SCREEN.
+        ENDIF.
+
+
+    ENDCASE.
+
+
+    "2023.02.28 소요일 선택조건 추가 S100사업장일 때만 활성화 시킴.
+    CASE p_vkbur.
+      WHEN 'S100'.
+        IF screen-group1 EQ 'S1'.
+          screen-active = 1.
+          MODIFY SCREEN.
+        ENDIF.
+      WHEN OTHERS.
+        IF screen-group1 EQ 'S1'.
+          screen-active = 0.
+          MODIFY SCREEN.
+        ENDIF.
+    ENDCASE.
+
+
+  ENDLOOP.
+
+ENDFORM.                    " MODIFY_SCREEN
+
+
+*&---------------------------------------------------------------------*
+*&      Form  CHECK_INPUT
+*&---------------------------------------------------------------------*
+FORM check_input .
+
+  DATA: l_date  LIKE sy-datum,
+        l_fkdat LIKE sy-datum.
+
+  CLEAR: l_date.
+
+  IF s_fkdat-high IS NOT INITIAL.
+    CALL FUNCTION 'RP_CALC_DATE_IN_INTERVAL'
+      EXPORTING
+        date      = s_fkdat-low
+        days      = '00'
+        months    = '12'
+        signum    = '+'
+        years     = '00'
+      IMPORTING
+        calc_date = l_date.
+
+    l_date = l_date - 1.
+
+    IF s_fkdat-high > l_date.
+      MESSAGE e000 WITH '조회기간 범위는 최대 12개월 입니다.!!'.
+      EXIT.
+    ENDIF.
+  ENDIF.
+
+
+  "2023.01.12 S100(사업장코드) 추가 SKC
+**********************************************************************************
+  IF p_vkbur <> 'D100' AND p_vkbur <> 'E100' AND
+     p_vkbur <> 'S200' AND p_vkbur <> 'R100' AND
+     p_vkbur <> 'N100' AND p_vkbur <> 'S100'"20200826 add
+     AND p_vkbur <> 'W100'. "20241129 ADD
+    MESSAGE e000 WITH '국내/해외영업/SR/SI/인터랙트 사업팀만 가능합니다.!!'.
+    EXIT.
+  ENDIF.
+
+*& Check 값 결과 TEXT
+  CASE 'X'.
+    WHEN  p_radi1.
+      gv_text1 = '일자별 검색'.
+    WHEN  p_radi2.
+      gv_text1 = '월별 검색'."2013.02.25 .
+    WHEN  p_radi3.
+      gv_text1 = '누계 검색'."2013.02.25 .
+    WHEN  p_radi4.
+      gv_text1 = '주별 검색'."2015.04.24
+  ENDCASE.
+
+  CASE p_vkbur.
+    WHEN 'D100'.
+      gv_text2 = '국내영업'.
+    WHEN 'E100'.
+      gv_text2 = '해외영업'.
+  ENDCASE.
+
+*& CHECK 로직 삭제_영업관리 요청_2012.01.31_안성환
+*    IF P_RADI2 = 'X'.
+*      CALL FUNCTION 'LAST_DAY_OF_MONTHS'
+*        EXPORTING
+*          day_in                  = S_FKDAT-HIGH
+*        IMPORTING
+*          LAST_DAY_OF_MONTH       = L_FKDAT.
+*
+*      IF S_FKDAT-LOW+6(2) <> '01'.
+*        MESSAGE e000 WITH '월별 검색에 시작일자는 1일이여야 합니다.!!'.
+*        EXIT.
+*      ENDIF.
+*      IF S_FKDAT-HIGH <> L_FKDAT.
+*        MESSAGE e000 WITH '월별 검색에 마지막일자는 말일이여야 합니다.!!'.
+*        EXIT.
+*      ENDIF.
+*    ENDIF.
+
+ENDFORM.                    " CHECK_INPUT
+
+
+*&---------------------------------------------------------------------*
+*&      Form  VARIANT_HELP
+*&---------------------------------------------------------------------*
+FORM variant_help  USING   p_variant LIKE disvariant-variant.
+
+*--. 레이아웃 변형 조건 F4 기능
+  CALL FUNCTION 'LVC_VARIANT_F4'
+    EXPORTING
+      is_variant    = g_variant
+      i_save        = 'A'
+    IMPORTING
+      e_exit        = g_variant_exit
+      es_variant    = g_default
+    EXCEPTIONS
+      not_found     = 1
+      program_error = 2
+      OTHERS        = 3.
+
+  IF sy-subrc NE 0.
+    MESSAGE i000 WITH '레이아웃 변형이 없습니다.!!'.
+  ENDIF.
+
+  IF g_variant_exit IS INITIAL.
+    p_variant = g_variant-variant = g_default-variant.
+  ENDIF.
+
+ENDFORM.                    " VARIANT_HELP
+
+
+
+*&---------------------------------------------------------------------*
+*&      Form  SELECT-DATA
+*&---------------------------------------------------------------------*
+FORM select-data .
+  DATA : lv_knumh LIKE a004-knumh,
+         lv_kzwi1 TYPE char20.
+
+  "2023.01.12 S100사업장 조회 추가에 따른 ZPS1,ZPS9 판매오더 유형도 조회 가능토록 IF 구분으로 분리 SKC
+**********************************************************************************
+  IF p_vkbur = 'S100'.
+    SELECT rk~kunrg AS kunnr rp~vbeln rp~posnr rp~aubel rp~aupos rp~fkimg
+          ap~vrkme rp~kzwi1 rp~kzwi2 rp~kzwi3 rp~kzwi4 rp~netwr rk~fkart
+          rp~shkzg rp~matnr  ap~waerk ak~auart ap~vgbel ap~vgpos rk~fkdat
+          rk~vkorg rk~vtweg rk~kurrf_dat AS prsdt ak~augru ak~gwldt ap~ps_psp_pnr AS pspnr ak~vbtyp
+      " AP~NETPR AS KZWI1
+     INTO CORRESPONDING FIELDS OF TABLE gt_data
+     FROM vbrk AS rk
+    INNER JOIN vbrp AS rp
+       ON rk~vbeln = rp~vbeln
+    INNER JOIN knvv AS vv
+       ON rk~kunrg = vv~kunnr
+      AND rk~vkorg = vv~vkorg
+      AND rk~vtweg = vv~vtweg
+    INNER JOIN vbap AS ap
+       ON rp~aubel = ap~vbeln
+      AND rp~aupos = ap~posnr
+    INNER JOIN vbak AS ak
+       ON ap~vbeln = ak~vbeln
+    INNER JOIN vmpa AS pa
+       ON ap~vbeln = pa~vbeln
+      AND ap~posnr = pa~posnr
+*   INNER JOIN PRPS AS PS
+*      ON PS~PSPNR = AP~PS_PSP_PNR
+*   INNER JOIN CAUFV AS CV
+*      ON PS~PSPNR = CV~PSPEL
+*   INNER JOIN RESB AS SB
+*      ON CV~AUFNR = SB~AUFNR
+    WHERE rk~fkdat IN s_fkdat                         "대금청구일
+      AND rk~kunrg IN s_kunnr                         "판매처
+      AND rk~fksto = space                            "'X'이면 대금청구취소
+      AND rk~sfakn = space                            "대금청구취소 번호
+      AND rk~vkorg IN s_vkorg
+      AND rk~bukrs IN s_bukrs
+      AND rp~vkbur = p_vkbur                          "사업장
+      AND rp~matnr IN s_matnr                         "자재
+      AND vv~vkgrp IN s_vkgrp                         "영업그룹
+      AND vv~bzirk IN s_bzirk                         "판매지역
+      AND ak~auart NOT IN ('ZMM1' , 'ZES1' , 'ZEF1' , 'ZPS4')  "사급,유상,무상오더 제외  (ZPS4 유형 추가 2023.01.16)
+      AND ak~augru IN s_augru.
+
+
+
+    "test
+    SELECT rk~kunrg AS kunnr rp~vbeln rp~aubel rp~aupos sb~erfmg AS fkimg
+          sb~erfme AS vrkme ap~netpr AS kzwi1 rk~fkart
+          rp~shkzg sb~matnr  ap~waerk ak~auart ap~vgbel ap~vgpos rk~fkdat
+          ak~vkorg ak~vtweg kd~prsdt ak~augru ak~gwldt ap~ps_psp_pnr AS pspnr sb~posnr AS posnr1 sb~bdter
+      " AP~NETPR AS KZWI1
+     APPENDING CORRESPONDING FIELDS OF TABLE gt_data
+     FROM vbrk AS rk
+    INNER JOIN vbrp AS rp
+       ON rk~vbeln = rp~vbeln
+    INNER JOIN knvv AS vv
+       ON rk~kunrg = vv~kunnr
+      AND rk~vkorg = vv~vkorg
+      AND rk~vtweg = vv~vtweg
+    INNER JOIN vbap AS ap
+       ON rp~aubel = ap~vbeln
+      AND rp~aupos = ap~posnr
+    INNER JOIN vbak AS ak
+       ON ap~vbeln = ak~vbeln
+    INNER JOIN vbkd AS kd
+       ON ak~vbeln = kd~vbeln
+    INNER JOIN vmpa AS pa
+       ON ap~vbeln = pa~vbeln
+      AND ap~posnr = pa~posnr
+    INNER JOIN prps AS ps
+       ON ps~pspnr = ap~ps_psp_pnr
+    INNER JOIN caufv AS cv
+       ON ps~psphi = cv~pronr
+    INNER JOIN resb AS sb
+       ON cv~aufnr = sb~aufnr
+    WHERE rk~fkdat IN s_fkdat                         "대금청구일
+      AND rk~kunrg IN s_kunnr                         "판매처
+      AND rk~fksto = space                            "'X'이면 대금청구취소
+      AND rk~sfakn = space                            "대금청구취소 번호
+      AND rk~vkorg IN s_vkorg
+      AND rk~bukrs IN s_bukrs
+      AND rp~vkbur = p_vkbur                          "사업장
+      AND rp~matnr IN s_matnr                         "자재
+      AND vv~vkgrp IN s_vkgrp                         "영업그룹
+      AND vv~bzirk IN s_bzirk                         "판매지역
+      AND ak~auart NOT IN ('ZMM1' , 'ZES1' , 'ZEF1' , 'ZPS4')  "사급,유상,무상오더 제외  (ZPS4 유형 추가 2023.01.16)
+      AND ak~augru IN s_augru
+*     AND SB~BDTER LE RK~FKDAT
+      AND sb~bdter IN s_bdter.
+    SORT gt_data BY vbeln matnr posnr1.
+
+    DELETE ADJACENT DUPLICATES FROM gt_data[] COMPARING vbeln matnr posnr1.
+
+
+    LOOP AT gt_data WHERE posnr = space.
+      CLEAR : gt_data-aupos, gt_data-kzwi1, gt_data-waerk, lv_knumh.
+      gt_data-aupos = gt_data-posnr1.
+      SELECT SINGLE b~netpr AS kzwi1 b~waerk
+        INTO (gt_data-kzwi1, gt_data-waerk)
+       FROM vbfa AS a
+        INNER JOIN vbap AS b
+        ON a~vbelv = b~vbeln
+        WHERE b~matnr = gt_data-matnr
+             AND a~vbeln = gt_data-aubel.
+
+
+*  IF GT_DATA-AUPOS IS INITIAL.
+*    GT_DATA-AUPOS = '999'.
+*    ENDIF.
+
+      IF sy-subrc = 0.
+      ELSE.
+        SELECT SINGLE knumh
+        INTO lv_knumh
+        FROM a004
+       WHERE matnr =  gt_data-matnr
+         AND vkorg =  gt_data-vkorg
+         AND vtweg =  gt_data-vtweg
+         AND kappl =  'V'
+         AND kschl =  'ZPR1'
+         AND datbi >= gt_data-prsdt
+         AND datab <= gt_data-prsdt.
+
+        IF sy-subrc NE 0.
+          SELECT SINGLE knumh
+          INTO lv_knumh
+          FROM a004
+         WHERE matnr =  gt_data-matnr
+           AND vkorg =  gt_data-vkorg
+           AND vtweg =  gt_data-vtweg
+           AND kappl =  'V'
+           AND kschl =  'ZPR0'
+           AND datbi >= gt_data-prsdt
+           AND datab <= gt_data-prsdt.
+
+          IF sy-subrc NE 0.
+            SELECT SINGLE knumh
+            INTO lv_knumh
+            FROM a004
+           WHERE matnr =  gt_data-matnr
+             AND vkorg =  gt_data-vkorg
+             AND vtweg =  gt_data-vtweg
+             AND kappl =  'V'
+             AND kschl =  'ZPR5'
+             AND datbi >= gt_data-prsdt
+             AND datab <= gt_data-prsdt.
+
+
+          ENDIF.
+        ENDIF.
+
+        SELECT SINGLE kbetr AS kzwi1 konwa AS waerk
+          INTO (gt_data-kzwi1, gt_data-waerk)
+          FROM konp
+         WHERE knumh    =  lv_knumh
+           AND loevm_ko <> 'X'.
+
+      ENDIF.
+
+      MODIFY gt_data.
+    ENDLOOP.
+    SORT gt_data BY vbeln vbtyp DESCENDING
+                                             aupos ASCENDING.
+
+*IF GT_DATA-KZWI1 IS INITIAL.
+
+
+  ELSE.
+
+    SELECT rk~kunrg AS kunnr rp~vbeln rp~posnr rp~aubel rp~aupos rp~fkimg
+           ap~vrkme rp~kzwi1 rp~kzwi2 rp~kzwi3 rp~kzwi4 rp~netwr rk~fkart
+           rp~shkzg rp~matnr ap~waerk ak~auart ap~vgbel ap~vgpos rk~fkdat
+           rk~vkorg rk~vtweg rk~kurrf_dat AS prsdt ak~augru ak~gwldt
+      INTO CORRESPONDING FIELDS OF TABLE gt_data
+      FROM vbrk AS rk
+     INNER JOIN vbrp AS rp
+        ON rk~vbeln = rp~vbeln
+     INNER JOIN knvv AS vv
+        ON rk~kunrg = vv~kunnr
+       AND rk~vkorg = vv~vkorg
+       AND rk~vtweg = vv~vtweg
+     INNER JOIN vbap AS ap
+        ON rp~aubel = ap~vbeln
+       AND rp~aupos = ap~posnr
+     INNER JOIN vbak AS ak
+        ON ap~vbeln = ak~vbeln
+     WHERE rk~fkdat IN s_fkdat                         "대금청구일
+       AND rk~kunrg IN s_kunnr                         "판매처
+       AND rk~fksto = space                            "'X'이면 대금청구취소
+       AND rk~sfakn = space                            "대금청구취소 번호
+       AND rk~vkorg IN s_vkorg
+       AND rk~bukrs IN s_bukrs
+       AND rp~vkbur = p_vkbur                          "사업장
+       AND rp~matnr IN s_matnr                         "자재
+       AND vv~vkgrp IN s_vkgrp                         "영업그룹
+       AND vv~bzirk IN s_bzirk                         "판매지역
+       AND ak~auart NOT IN ('ZMM1' , 'ZES1' ,'ZEF1' , 'ZPS1' ,'ZPS9'  )  "사급,유상,무상오더 제외
+       AND ak~augru IN s_augru.
+
+  ENDIF.
+
+  " 오더유형 20150109 추가 MMD03
+
+*& 조달단품에 경우 오더TYPE 별 계산수식이 상이하므로 최초 오더TYPE을 불러온다.
+*& 조달단품 매출오더에 대한 최초 오더TYPE  및 영업형태 불러오기
+  LOOP AT gt_data.
+    IF gt_data-auart = 'ZDKE' OR
+       gt_data-auart = 'ZDKN' OR  "2018.10.25 추가
+       gt_data-auart = 'ZDKO'.    "2018.10.25 추가
+      PERFORM  get_auart              USING gt_data-vgbel
+                                   CHANGING gt_data-auart.
+
+      PERFORM  get_bsark              USING gt_data-vgbel
+                                   CHANGING gt_data-bsark.
+
+    ENDIF.
+*& 조달단품 반품오더에 대한 최초 오더TYPE 및 영업형태 불러오기
+*& 초기 반품오더 생성시 매출오더를 참조 현재는 대금청구문서를 참조
+    IF gt_data-shkzg ='X'.
+*& 대금청구문서 참조
+      PERFORM  get_auaru_vbrk         USING gt_data-vgbel
+                                   CHANGING gt_data-auaru
+                                            gt_data-zuonr.
+      IF sy-subrc <> 0.
+*& 매출오더 참조
+        PERFORM  get_auaru_vbak         USING gt_data-vgbel
+                                     CHANGING gt_data-auaru
+                                              gt_data-zuonr.
+      ENDIF.
+
+      IF gt_data-auaru = 'ZDKE' OR
+         gt_data-auaru = 'ZDKN' OR "2018.10.25 추가
+         gt_data-auaru = 'ZDKO'.   "2018.10.25 추가
+
+        PERFORM  get_change_auaru       USING gt_data-zuonr
+                                     CHANGING gt_data-auaru
+                                              gt_data-bsark.
+      ENDIF.
+    ENDIF.
+
+*& 해영 청구금액 KRW 로 변환
+    IF p_vkbur = 'E100'.
+      PERFORM get_local_currency(zsdsinfo)  USING gt_data-prsdt
+                                                  gt_data-waerk
+                                                  'KRW'
+                                                  gt_data-kzwi1
+                                         CHANGING gt_data-kzwi1.
+
+      PERFORM get_local_currency(zsdsinfo)  USING gt_data-prsdt
+                                                  gt_data-waerk
+                                                  'KRW'
+                                                  gt_data-kzwi2
+                                         CHANGING gt_data-kzwi2.
+
+      PERFORM get_local_currency(zsdsinfo)  USING gt_data-prsdt
+                                                  gt_data-waerk
+                                                  'KRW'
+                                                  gt_data-netwr
+                                         CHANGING gt_data-netwr.
+
+      gt_data-waerk = 'KRW'.
+
+*& 해영 대금청구금액 통화는 USD 모두 변환
+      PERFORM get_foreign_currency(zsdsinfo) USING gt_data-prsdt
+                                                   gt_data-waerk
+                                                   'USD'
+                                                   gt_data-kzwi1
+                                          CHANGING gt_data-kzwi5.
+
+      PERFORM get_foreign_currency(zsdsinfo) USING gt_data-prsdt
+                                                   gt_data-waerk
+                                                   'USD'
+                                                   gt_data-kzwi2
+                                          CHANGING gt_data-kzwi6.
+
+      PERFORM get_foreign_currency(zsdsinfo) USING gt_data-prsdt
+                                                   gt_data-waerk
+                                                   'USD'
+                                                   gt_data-netwr
+                                          CHANGING gt_data-kzwi7.
+    ENDIF.
+
+    gt_data-wausd = 'USD'.
+
+    IF gt_data-matnr IS NOT INITIAL.
+      PERFORM  get_normt              USING gt_data-matnr
+                                   CHANGING gt_data-normt.
+
+      PERFORM  get_bonus              USING gt_data-matnr
+                                   CHANGING gt_data-bonus.
+
+    ENDIF.
+    MODIFY gt_data.
+  ENDLOOP.
+
+ENDFORM.                    " SELECT-DATA
+
+
+
+*&---------------------------------------------------------------------*
+*&      Form  GET_AUART
+*&---------------------------------------------------------------------*
+FORM get_auart  USING    p_vgbel
+                CHANGING p_auart.
+
+  CLEAR: p_auart.
+  SELECT SINGLE auart
+    INTO p_auart
+    FROM vbak
+   WHERE vbeln = p_vgbel.
+
+ENDFORM.                    " GET_AUART
+
+
+*&---------------------------------------------------------------------*
+*&      Form  GET_AUARU
+*&---------------------------------------------------------------------*
+FORM get_auaru_vbrk  USING    p_vgbel
+                     CHANGING p_auaru
+                              p_zuonr.
+
+  CLEAR: p_auaru , p_zuonr.
+  SELECT SINGLE ak~auart AS auaru rk~zuonr
+    INTO (p_auaru, p_zuonr)
+    FROM vbrk AS rk
+   INNER JOIN vbak AS ak
+      ON rk~zuonr = ak~vbeln
+   WHERE rk~vbeln = p_vgbel.
+
+
+ENDFORM.                    " GET_AUARU
+
+
+*&---------------------------------------------------------------------*
+*&      Form  GET_AUARU2
+*&---------------------------------------------------------------------*
+FORM get_auaru_vbak  USING    p_vgbel
+                     CHANGING p_auaru
+                              p_zuonr.
+
+  CLEAR: p_auaru , p_zuonr.
+  SELECT SINGLE auart vbeln
+    INTO (p_auaru, p_zuonr)
+    FROM vbak
+   WHERE vbeln = p_vgbel.
+
+ENDFORM.                    " GET_AUARU2
+*&---------------------------------------------------------------------*
+*&      Form  GET_CHANGE_AUARU
+*&---------------------------------------------------------------------*
+FORM get_change_auaru  USING    p_zuonr
+                       CHANGING p_auaru
+                                p_bsark.
+
+  CLEAR: p_auaru , p_bsark.
+  SELECT SINGLE b~auart AS auaru b~bsark
+    INTO (p_auaru, p_bsark)
+    FROM vbak AS a
+   INNER JOIN vbak AS b
+      ON a~vgbel = b~vbeln
+   WHERE a~vbeln = p_zuonr.
+
+ENDFORM.                    " GET_CHANGE_AUARU
+
+
+
+*&---------------------------------------------------------------------*
+*&      Form  APPEND_DATA
+*&---------------------------------------------------------------------*
+FORM append_data .
+
+  CASE 'X'.
+    WHEN p_radi1.   PERFORM append_p_radi1.      "일자별 DATA
+    WHEN p_radi2.   PERFORM collect_p_radi2.     "월별 DATA
+    WHEN p_radi3.   PERFORM collect_p_radi3.     "누계 DATA
+    WHEN p_radi4.   PERFORM collect_p_radi4.     "누계 DATA
+  ENDCASE.
+ENDFORM.                    " APPEND_DATA
+
+
+
+*&---------------------------------------------------------------------*
+*&      Form  APPEND_P_RADI1
+*&---------------------------------------------------------------------*
+FORM append_p_radi1 .
+
+*& 각 오더TYPE 별 금액 산출하기
+*& GT_DATA 에 금액필드는 가격결정절차에 의해 저장되어진 값이며,
+*& GT_MAIN 에 판가(KZWI1),매출할인(KZWI2),본사마진(KZWI3),설치수수료(KZWI4)로 저장
+  LOOP AT gt_data.
+
+*& Credit/Debit Memo는 수량을 0으로 표기
+    IF gt_data-fkart(02) = 'ZG' OR gt_data-fkart(02) = 'ZL'.
+      CLEAR: gt_data-fkimg.
+    ENDIF.
+
+*& 반품에 대한 금액 산출
+    IF gt_data-shkzg = 'X'.
+      CASE gt_data-auaru.
+        WHEN 'ZDKF' OR 'ZDKG' OR 'ZDKH' OR 'ZDKI' OR 'ZDKJ' OR 'ZDKK' OR
+             'ZDKL' OR 'ZDKM'.  "2018.10.25 추가
+          gt_main-kzwi1 = ( gt_data-kzwi1 ) * -1.
+          gt_main-kzwi2 = ( gt_data-netwr - ( gt_data-kzwi1 +
+          gt_data-kzwi2 + gt_data-kzwi4 ) ) * -1.
+          gt_main-kzwi3 = ( gt_data-kzwi2 ) * -1.
+          gt_main-kzwi4 = ( gt_data-kzwi4 ) * -1.
+        WHEN 'ZDKB'.
+          gt_main-kzwi1 = ( gt_data-netwr - gt_data-kzwi2 ) * -1.
+          gt_main-kzwi3 = ( gt_data-kzwi2 + gt_data-kzwi3 ) * -1.
+          gt_main-kzwi4 = gt_data-kzwi3.
+        WHEN OTHERS.
+          IF p_vkbur = 'S100' AND gt_data-vbtyp NE 'C'.
+            gt_main-kzwi1 =  gt_data-kzwi1.
+          ELSE.
+            gt_main-kzwi1 = ( gt_data-netwr - ( gt_data-kzwi2 ) ) * -1.
+            gt_main-kzwi2 = ( gt_data-kzwi2 ) * -1.
+            gt_main-kzwi5 = ( gt_data-kzwi5 ) * -1.
+            gt_main-kzwi6 = ( gt_data-kzwi6 ) * -1.
+          ENDIF.
+      ENDCASE.
+      gt_main-fkimg = gt_data-fkimg * -1.
+      gt_main-netwr = gt_data-netwr * -1.
+      gt_main-kzwi7 = gt_data-kzwi7 * -1.
+    ELSE.
+
+*& 매출에 대한 금액 산출
+
+
+      CASE gt_data-auart.
+        WHEN 'ZDKF' OR 'ZDKG' OR 'ZDKH' OR 'ZDKI' OR 'ZDKJ' OR 'ZDKK' OR
+             'ZDKL' OR 'ZDKM'.  "2018.10.25 추가.
+          gt_main-kzwi1 = gt_data-kzwi1.
+          gt_main-kzwi2 = gt_data-netwr - ( gt_data-kzwi1 +
+          gt_data-kzwi2 + gt_data-kzwi4 ).
+          gt_main-kzwi3 = gt_data-kzwi2.
+          gt_main-kzwi4 = gt_data-kzwi4.
+        WHEN 'ZDKB'.
+          gt_main-kzwi1 = gt_data-netwr - gt_data-kzwi2.
+          gt_main-kzwi3 = gt_data-kzwi2 + gt_data-kzwi3.
+          gt_main-kzwi4 = gt_data-kzwi3 * -1.
+        WHEN OTHERS.
+          IF p_vkbur = 'S100' AND gt_data-vbtyp NE 'C'.
+            gt_main-kzwi1 =  gt_data-kzwi1.
+          ELSE.
+            gt_main-kzwi1 = gt_data-netwr - ( gt_data-kzwi2 ).
+            gt_main-kzwi2 = gt_data-kzwi2.
+*          gt_main-kzwi5 = gt_data-kzwi5
+            gt_main-kzwi5 = gt_data-kzwi5 - ( gt_data-kzwi6 ).
+            gt_main-kzwi6 = gt_data-kzwi6.
+          ENDIF.
+      ENDCASE.
+
+      gt_main-fkimg = gt_data-fkimg.
+      gt_main-netwr = gt_data-netwr.
+      gt_main-kzwi7 = gt_data-kzwi7.
+    ENDIF.
+
+    gt_main-vkorg = gt_data-vkorg.
+    gt_main-vtweg = gt_data-vtweg.
+    gt_main-kunnr = gt_data-kunnr.
+    gt_main-fkdat = gt_data-fkdat.
+    gt_main-vbeln = gt_data-vbeln.
+    gt_main-posnr = gt_data-posnr.
+    gt_main-auart = gt_data-auart.
+    gt_main-aubel = gt_data-aubel.
+    gt_main-aupos = gt_data-aupos.
+    gt_main-matnr = gt_data-matnr.
+    gt_main-vrkme = gt_data-vrkme.
+    gt_main-waerk = gt_data-waerk.
+    gt_main-bsark = gt_data-bsark.
+    gt_main-wausd = gt_data-wausd.
+    gt_main-normt = gt_data-normt.
+    gt_main-bonus = gt_data-bonus.
+* 20150109 추가 MMD03
+    gt_main-augru = gt_data-augru.  " 오더사유
+* 20150109
+    gt_main-gwldt = gt_data-gwldt.
+    gt_main-bdter = gt_data-bdter.
+
+*& 설계처 가져오기
+    CASE gt_data-auaru(2).
+      WHEN 'ZD'.                              "반품에 대한 설계처 가져오기
+        PERFORM  get_vbpa_kunwe           USING gt_data-zuonr
+                                       CHANGING gt_main-kunwe.
+
+      WHEN OTHERS.
+        PERFORM  get_vbpa_kunwe           USING gt_data-aubel
+                                       CHANGING gt_main-kunwe.
+    ENDCASE.
+
+    APPEND gt_main.      CLEAR: gt_main.
+  ENDLOOP.
+
+ENDFORM.                    " APPEND_P_RADI1
+
+
+
+*&---------------------------------------------------------------------*
+*&      Form  COLLECT_P_RADI2
+*&---------------------------------------------------------------------*
+FORM collect_p_radi2 .
+
+*& 각 오더TYPE 별 금액 산출하기
+*& GT_DATA 에 금액필드는 가격결정절차에 의해 저장되어진 값이며,
+*& GT_MAIN 에 판가(KZWI1),매출할인(KZWI2),본사마진(KZWI3),설치수수료(KZWI4)로 저장
+  LOOP AT gt_data.
+
+*& Credit/Debit Memo는 수량을 0으로 표기
+    IF gt_data-fkart(02) = 'ZG' OR gt_data-fkart(02) = 'ZL'.
+      CLEAR: gt_data-fkimg.
+    ENDIF.
+
+*& 반품에 대한 금액 산출
+    IF gt_data-shkzg = 'X'.
+      CASE gt_data-auaru.
+        WHEN 'ZDKF' OR 'ZDKG' OR 'ZDKH' OR 'ZDKI' OR 'ZDKJ' OR 'ZDKK' OR
+             'ZDKL' OR 'ZDKM'.  "2018.10.25 추가.
+          gt_main-kzwi1 = ( gt_data-kzwi1 ) * -1.
+          gt_main-kzwi2 = ( gt_data-netwr - ( gt_data-kzwi1 +
+          gt_data-kzwi2 + gt_data-kzwi4 ) ) * -1.
+          gt_main-kzwi3 = ( gt_data-kzwi2 ) * -1.
+          gt_main-kzwi4 = ( gt_data-kzwi4 ) * -1.
+        WHEN 'ZDKB'.
+          gt_main-kzwi1 = ( gt_data-netwr - gt_data-kzwi2 ) * -1.
+          gt_main-kzwi3 = ( gt_data-kzwi2 + gt_data-kzwi3 ) * -1.
+          gt_main-kzwi4 = gt_data-kzwi3.
+        WHEN OTHERS.
+          IF p_vkbur = 'S100' AND gt_data-vbtyp NE 'C'.
+            gt_main-kzwi1 =  gt_data-kzwi1.
+          ENDIF.
+          gt_main-kzwi1 = ( gt_data-netwr - ( gt_data-kzwi2 ) ) * -1.
+          gt_main-kzwi2 = ( gt_data-kzwi2 ) * -1.
+          gt_main-kzwi5 = ( gt_data-kzwi5 ) * -1.
+          gt_main-kzwi6 = ( gt_data-kzwi6 ) * -1.
+      ENDCASE.
+      gt_main-fkimg = gt_data-fkimg * -1.
+      gt_main-netwr = gt_data-netwr * -1.
+      gt_main-kzwi7 = gt_data-kzwi7 * -1.
+    ELSE.
+
+*& 매출에 대한 금액 산출
+      CASE gt_data-auart.
+        WHEN 'ZDKF' OR 'ZDKG' OR 'ZDKH' OR 'ZDKI' OR 'ZDKJ' OR 'ZDKK' OR
+             'ZDKL' OR 'ZDKM'.  "2018.10.25 추가.
+          gt_main-kzwi1 = gt_data-kzwi1.
+          gt_main-kzwi2 = gt_data-netwr - ( gt_data-kzwi1 +
+          gt_data-kzwi2 + gt_data-kzwi4 ).
+          gt_main-kzwi3 = gt_data-kzwi2.
+          gt_main-kzwi4 = gt_data-kzwi4.
+        WHEN 'ZDKB'.
+          gt_main-kzwi1 = gt_data-netwr - gt_data-kzwi2.
+          gt_main-kzwi3 = gt_data-kzwi2 + gt_data-kzwi3.
+          gt_main-kzwi4 = gt_data-kzwi3 * -1.
+        WHEN OTHERS.
+          IF p_vkbur = 'S100' AND gt_data-vbtyp NE 'C'.
+            gt_main-kzwi1 =  gt_data-kzwi1.
+          ELSE.
+            gt_main-kzwi1 = gt_data-netwr - ( gt_data-kzwi2 ).
+            gt_main-kzwi2 = gt_data-kzwi2.
+            gt_main-kzwi5 = gt_data-kzwi5.
+            gt_main-kzwi6 = gt_data-kzwi6.
+          ENDIF.
+      ENDCASE.
+      gt_main-fkimg = gt_data-fkimg.
+      gt_main-netwr = gt_data-netwr.
+      gt_main-kzwi7 = gt_data-kzwi7.
+    ENDIF.
+
+    " 20130225 월별검색 추가
+    gt_main-fkmon = gt_data-fkdat.
+    gt_main-vkorg = gt_data-vkorg.
+    gt_main-vtweg = gt_data-vtweg.
+    gt_main-kunnr = gt_data-kunnr.
+    gt_main-matnr = gt_data-matnr.
+    gt_main-vrkme = gt_data-vrkme.
+    gt_main-waerk = gt_data-waerk.
+    gt_main-bsark = gt_data-bsark.
+    gt_main-wausd = gt_data-wausd.
+    gt_main-normt = gt_data-normt.
+* 20150109 추가 MMD03
+    gt_main-augru = gt_data-augru.  " 오더사유
+    gt_main-bdter = gt_data-bdter.
+* 20150109
+
+
+*& 설계처 가져오기
+    CASE gt_data-auaru(2).
+      WHEN 'ZD'.                              "반품에 대한 설계처 가져오기
+        PERFORM  get_vbpa_kunwe           USING gt_data-zuonr
+                                       CHANGING gt_main-kunwe.
+
+      WHEN OTHERS.
+        PERFORM  get_vbpa_kunwe           USING gt_data-aubel
+                                       CHANGING gt_main-kunwe.
+    ENDCASE.
+
+
+    COLLECT gt_main.      CLEAR: gt_main.
+  ENDLOOP.
+
+
+
+ENDFORM.                    " COLLECT_P_RADI2
+*&---------------------------------------------------------------------*
+*&      Form  COLLECT_P_RADI2
+*&---------------------------------------------------------------------*
+FORM collect_p_radi3 .
+
+*& 각 오더TYPE 별 금액 산출하기
+*& GT_DATA 에 금액필드는 가격결정절차에 의해 저장되어진 값이며,
+*& GT_MAIN 에 판가(KZWI1),매출할인(KZWI2),본사마진(KZWI3),설치수수료(KZWI4)로 저장
+  LOOP AT gt_data.
+
+*& Credit/Debit Memo는 수량을 0으로 표기
+    IF gt_data-fkart(02) = 'ZG' OR gt_data-fkart(02) = 'ZL'.
+      CLEAR: gt_data-fkimg.
+    ENDIF.
+
+*& 반품에 대한 금액 산출
+    IF gt_data-shkzg = 'X'.
+      CASE gt_data-auaru.
+        WHEN 'ZDKF' OR 'ZDKG' OR 'ZDKH' OR 'ZDKI' OR 'ZDKJ' OR 'ZDKK' OR
+             'ZDKL' OR 'ZDKM'.  "2018.10.25 추가.
+          gt_main-kzwi1 = ( gt_data-kzwi1 ) * -1.
+          gt_main-kzwi2 = ( gt_data-netwr - ( gt_data-kzwi1 +
+          gt_data-kzwi2 + gt_data-kzwi4 ) ) * -1.
+          gt_main-kzwi3 = ( gt_data-kzwi2 ) * -1.
+          gt_main-kzwi4 = ( gt_data-kzwi4 ) * -1.
+        WHEN 'ZDKB'.
+          gt_main-kzwi1 = ( gt_data-netwr - gt_data-kzwi2 ) * -1.
+          gt_main-kzwi3 = ( gt_data-kzwi2 + gt_data-kzwi3 ) * -1.
+          gt_main-kzwi4 = gt_data-kzwi3.
+        WHEN OTHERS.
+          IF p_vkbur = 'S100' AND gt_data-vbtyp NE 'C'.
+            gt_main-kzwi1 =  gt_data-kzwi1.
+          ELSE.
+            gt_main-kzwi1 = ( gt_data-netwr - ( gt_data-kzwi2 ) ) * -1.
+            gt_main-kzwi2 = ( gt_data-kzwi2 ) * -1.
+            gt_main-kzwi5 = ( gt_data-kzwi5 ) * -1.
+            gt_main-kzwi6 = ( gt_data-kzwi6 ) * -1.
+          ENDIF.
+      ENDCASE.
+      gt_main-fkimg = gt_data-fkimg * -1.
+      gt_main-netwr = gt_data-netwr * -1.
+      gt_main-kzwi7 = gt_data-kzwi7 * -1.
+    ELSE.
+
+*& 매출에 대한 금액 산출
+      CASE gt_data-auart.
+        WHEN 'ZDKF' OR 'ZDKG' OR 'ZDKH' OR 'ZDKI' OR 'ZDKJ' OR 'ZDKK' OR
+             'ZDKL' OR 'ZDKM'.  "2018.10.25 추가.
+          gt_main-kzwi1 = gt_data-kzwi1.
+          gt_main-kzwi2 = gt_data-netwr - ( gt_data-kzwi1 +
+          gt_data-kzwi2 + gt_data-kzwi4 ).
+          gt_main-kzwi3 = gt_data-kzwi2.
+          gt_main-kzwi4 = gt_data-kzwi4.
+        WHEN 'ZDKB'.
+          gt_main-kzwi1 = gt_data-netwr - gt_data-kzwi2.
+          gt_main-kzwi3 = gt_data-kzwi2 + gt_data-kzwi3.
+          gt_main-kzwi4 = gt_data-kzwi3 * -1.
+        WHEN OTHERS.
+          IF p_vkbur = 'S100' AND gt_data-vbtyp NE 'C'.
+            gt_main-kzwi1 =  gt_data-kzwi1.
+          ELSE.
+            gt_main-kzwi1 = gt_data-netwr - ( gt_data-kzwi2 ).
+            gt_main-kzwi2 = gt_data-kzwi2.
+            gt_main-kzwi5 = gt_data-kzwi5.
+            gt_main-kzwi6 = gt_data-kzwi6.
+          ENDIF.
+      ENDCASE.
+      gt_main-fkimg = gt_data-fkimg.
+      gt_main-netwr = gt_data-netwr.
+      gt_main-kzwi7 = gt_data-kzwi7.
+    ENDIF.
+
+    gt_main-vkorg = gt_data-vkorg.
+    gt_main-vtweg = gt_data-vtweg.
+    gt_main-kunnr = gt_data-kunnr.
+    gt_main-matnr = gt_data-matnr.
+    gt_main-vrkme = gt_data-vrkme.
+    gt_main-waerk = gt_data-waerk.
+    gt_main-bsark = gt_data-bsark.
+    gt_main-wausd = gt_data-wausd.
+    gt_main-normt = gt_data-normt.
+* 20150109 추가 MMD03
+    gt_main-augru = gt_data-augru.  " 오더사유
+    gt_main-bdter = gt_data-bdter.
+* 20150109
+
+
+*& 설계처 가져오기
+    CASE gt_data-auaru(2).
+      WHEN 'ZD'.                              "반품에 대한 설계처 가져오기
+        PERFORM  get_vbpa_kunwe           USING gt_data-zuonr
+                                       CHANGING gt_main-kunwe.
+
+      WHEN OTHERS.
+        PERFORM  get_vbpa_kunwe           USING gt_data-aubel
+                                       CHANGING gt_main-kunwe.
+    ENDCASE.
+
+
+    COLLECT gt_main.      CLEAR: gt_main.
+  ENDLOOP.
+
+
+
+ENDFORM.                    " COLLECT_P_RADI3
+*&---------------------------------------------------------------------*
+*&      Form  MODIFY_DATA
+*&---------------------------------------------------------------------*
+FORM modify_data .
+
+
+  LOOP AT gt_main.
+*& DATA 가져오기
+    PERFORM  get_knvv_vkgrp           USING gt_main-kunnr
+                                            gt_main-vkorg
+                                            gt_main-vtweg
+                                   CHANGING gt_main-vkgrp
+                                   "영업그룹(판매처)
+                                            gt_main-bzirk.         "영업지역
+
+    PERFORM  get_knvv_vkgr2           USING gt_main-kunwe
+                                            gt_main-vkorg
+                                            gt_main-vtweg
+                                   CHANGING gt_main-vkgr2
+                                   "영업그룹(설계처)
+                                            gt_main-bzir2.         "영업지역
+
+    PERFORM  get_mara_info            USING gt_main-matnr
+                                   CHANGING gt_main-matkl          "자재그룹
+                                            gt_main-mtart          "자재유형
+                                            gt_main-spart.         "제품군
+
+    PERFORM  get_mvke_mvgr            USING gt_main-matnr
+                                            gt_main-vkorg
+                                            gt_main-vtweg
+                                   CHANGING gt_main-mvgr1
+                                   "자재그룹1~6
+                                            gt_main-mvgr2
+                                            gt_main-mvgr3
+                                            gt_main-mvgr4
+                                            gt_main-mvgr5
+                                            gt_main-provg
+                                            gt_main-mvgr6
+                                            "2012.12.06
+                                            gt_main-mvgr7
+                                            "자재그룹 7~9 추가
+                                            gt_main-mvgr9
+                                            gt_main-mvgr10
+                                            gt_main-mvgr11
+                                            gt_main-prat2.
+    "설계모델
+
+*& TEXT 가져오기
+    PERFORM  get_matnr_nm             USING gt_main-matnr
+                                   CHANGING gt_main-maktx.         "자재명
+
+    PERFORM  get_kunnr_nm             USING gt_main-kunnr
+                                   CHANGING gt_main-name1.         "판매처명
+
+    PERFORM  get_kunwe_nm             USING gt_main-kunwe
+                                   CHANGING gt_main-name2          "설계처명
+"GT_MAIN-SORTL.         "설계처검색어
+                                            gt_main-sort2.
+    "설계처검색어_20121019_MMD03
+
+    PERFORM  get_vkgrp_nm             USING gt_main-vkgrp
+                                   CHANGING gt_main-bezei.
+    "영업그룹명(판매처)
+
+    PERFORM  get_bzirk_nm             USING gt_main-bzirk
+                                   CHANGING gt_main-bztxt.
+    "영업지역명(판매처)
+
+    PERFORM  get_vkgr2_nm             USING gt_main-vkgr2
+                                   CHANGING gt_main-bezej.
+    "영업그룹명(설계처)
+
+    PERFORM  get_bzir2_nm             USING gt_main-bzir2
+                                   CHANGING gt_main-bztxj.
+    "영업지역명(설계처)
+
+    PERFORM  get_matkl_nm             USING gt_main-matkl
+                                   CHANGING gt_main-wgbez.
+    "자재그룹명
+
+    PERFORM  get_spart_nm             USING gt_main-spart
+                                   CHANGING gt_main-vtext.         "제품군명
+
+    PERFORM  get_mtart_nm             USING gt_main-mtart
+                                   CHANGING gt_main-mtbez.
+    "자재유형명
+
+    PERFORM  get_mvgr1_nm             USING gt_main-mvgr1
+                                   CHANGING gt_main-beze1.
+    "자재그룹1
+
+    PERFORM  get_mvgr2_nm             USING gt_main-mvgr2
+                                   CHANGING gt_main-beze2.
+    "자재그룹2
+
+    PERFORM  get_mvgr3_nm             USING gt_main-mvgr3
+                                   CHANGING gt_main-beze3.
+    "자재그룹3
+
+    PERFORM  get_mvgr4_nm             USING gt_main-mvgr4
+                                   CHANGING gt_main-beze4.
+    "자재그룹4
+
+    PERFORM  get_mvgr5_nm             USING gt_main-mvgr5
+                                   CHANGING gt_main-beze5.
+    "자재그룹5
+
+    PERFORM  get_mvgr6_nm             USING gt_main-provg
+                                   CHANGING gt_main-vtex6.
+    "자재그룹6
+
+    PERFORM  get_mvgr7_nm             USING gt_main-mvgr6
+                                   CHANGING gt_main-beze6.
+    "자재그룹7
+
+    PERFORM  get_mvgr8_nm             USING gt_main-mvgr7
+                                   CHANGING gt_main-beze7.
+    "자재그룹8
+
+    PERFORM  get_mvgr9_nm             USING gt_main-mvgr9
+                                   CHANGING gt_main-beze9.
+    "자재그룹9
+
+    PERFORM  get_mvgr10_nm            USING gt_main-mvgr10
+                                   CHANGING gt_main-beze10.
+    "자재그룹8
+
+    PERFORM  get_mvgr11_nm            USING gt_main-mvgr11
+                                   CHANGING gt_main-beze11.
+    "자재그룹9
+*  IF P_RADI1 = 'X'.
+    PERFORM  get_bsark_nm             USING gt_main-bsark
+                                   CHANGING gt_main-vtexk.
+    "영업활동명
+
+    PERFORM  get_normt_nm             USING gt_main-normt
+                                   CHANGING gt_main-bezei_n.
+    "통합코드명.
+
+    PERFORM  get_bonus_nm             USING gt_main-bonus
+                                   CHANGING gt_main-vtext1.
+    "특성값명.
+*  ENDIF.
+
+* 20150109 추가 MMD03
+    PERFORM get_bstkd_bstdk USING gt_main-aubel
+                                   CHANGING gt_main-bstkd
+                                                     gt_main-bstdk.
+    " PO 번호, PO일자
+
+    PERFORM get_augru_nm USING gt_main-augru
+                                      CHANGING gt_main-bezei2.  "오더사유내역
+* 20150109
+
+    MODIFY gt_main.       CLEAR: gt_main.
+  ENDLOOP.
+
+
+  "2023.01.20  S100 사업장 코드 일 때는 로직 타지 않기 SKC***********
+*& 매출금액이 0 인것 삭제
+  IF p_vkbur <> 'S100'.
+    DELETE gt_main WHERE kzwi1 = 0 AND kzwi2 = 0 AND kzwi3 = 0
+                     AND kzwi4 = 0 AND netwr = 0.
+  ENDIF.
+*& 추가선택조건 처리
+  DELETE gt_main WHERE NOT ( kunwe IN s_kunwe )
+                    OR NOT ( vkgr2 IN s_vkgr2 )
+                    OR NOT ( bzir2 IN s_bzir2 ).
+*& 조회건수
+  DESCRIBE TABLE gt_main LINES g_totlines.
+
+ENDFORM.                    " MODIFY_DATA
+
+
+
+*&---------------------------------------------------------------------*
+*&      Form  GET_BSARK
+*&---------------------------------------------------------------------*
+FORM get_bsark  USING    p_vgbel
+                CHANGING p_bsark.
+
+  CLEAR: p_bsark.
+  SELECT SINGLE bsark
+    INTO p_bsark
+    FROM vbkd
+   WHERE vbeln = p_vgbel.
+
+ENDFORM.                    " GET_BSARK
+
+
+*&---------------------------------------------------------------------*
+*&      Form  GET_KUNWE
+*&---------------------------------------------------------------------*
+FORM get_vbpa_kunwe  USING    p_aubel
+                     CHANGING p_kunwe.
+
+  CLEAR: p_kunwe.
+  SELECT SINGLE kunnr
+    INTO p_kunwe
+    FROM vbpa
+   WHERE vbeln = p_aubel
+     AND parvw = 'RB'.
+  IF sy-subrc <> 0.
+    SELECT SINGLE kunnr
+      INTO p_kunwe
+      FROM vbpa
+     WHERE vbeln = p_aubel
+       AND parvw = 'WE'.
+  ENDIF.
+
+ENDFORM.                    " GET_KUNWE
+
+
+*&---------------------------------------------------------------------*
+*&      Form  GET_VKGRP
+*&---------------------------------------------------------------------*
+FORM get_knvv_vkgrp  USING    p_kunnr
+                              p_vkorg
+                              p_vtweg
+                     CHANGING p_vkgrp
+                              p_bzirk.
+
+  CLEAR: p_vkgrp , p_bzirk.
+  SELECT SINGLE vkgrp bzirk
+    INTO (p_vkgrp , p_bzirk)
+    FROM knvv
+   WHERE kunnr = p_kunnr
+     AND vkorg = p_vkorg
+     AND vtweg = p_vtweg.
+
+ENDFORM.                    " GET_VKGRP
+
+
+*&---------------------------------------------------------------------*
+*&      Form  GET_VKGR2
+*&---------------------------------------------------------------------*
+FORM get_knvv_vkgr2  USING    p_kunwe
+                              p_vkorg
+                              p_vtweg
+                     CHANGING p_vkgr2
+                              p_bzir2.
+
+  CLEAR: p_vkgr2 , p_bzir2.
+  SELECT SINGLE vkgrp bzirk
+    INTO (p_vkgr2, p_bzir2)
+    FROM knvv
+   WHERE kunnr = p_kunwe
+     AND vkorg = p_vkorg
+     AND vtweg = p_vtweg.
+
+ENDFORM.                    " GET_VKGR2
+
+
+*&---------------------------------------------------------------------*
+*&      Form  GET_MARA_INFO
+*&---------------------------------------------------------------------*
+FORM get_mara_info  USING    p_matnr
+                    CHANGING p_matkl
+                             p_mtart
+                             p_spart.
+
+  CLEAR: p_matkl , p_mtart , p_spart.
+  SELECT SINGLE matkl mtart spart
+    INTO (p_matkl , p_mtart , p_spart)
+    FROM mara
+   WHERE matnr = p_matnr.
+
+ENDFORM.                    " GET_MARA_INFO
+*&---------------------------------------------------------------------*
+*&      Form  GET_MVKE_MVGR
+*&---------------------------------------------------------------------*
+FORM get_mvke_mvgr  USING    p_matnr
+                             p_vkorg
+                             p_vtweg
+                    CHANGING p_mvgr1
+                             p_mvgr2
+                             p_mvgr3
+                             p_mvgr4
+                             p_mvgr5
+                             p_provg
+                             p_mvgr6
+                             p_mvgr7
+                             p_mvgr9
+                             p_mvgr10
+                             p_mvgr11
+                             p_prat2.
+
+  CLEAR: p_mvgr1, p_mvgr2, p_mvgr3, p_mvgr4,
+         p_mvgr5, p_provg, p_mvgr6,
+         p_mvgr7, p_mvgr9, p_mvgr10 , p_mvgr11,
+         p_prat2.
+
+  SELECT SINGLE mvgr1 mvgr2 mvgr3 mvgr4 mvgr5 provg mvgr6 prat2
+                mvgr7 mvgr9 mvgr10 mvgr11
+    INTO (p_mvgr1, p_mvgr2, p_mvgr3, p_mvgr4,
+          p_mvgr5, p_provg, p_mvgr6, p_prat2,
+          p_mvgr7, p_mvgr9, p_mvgr10, p_mvgr11)
+    FROM mvke
+   WHERE matnr = p_matnr
+     AND vkorg = p_vkorg
+     AND vtweg = p_vtweg.
+
+ENDFORM.                    " GET_MVKE_MVGR
+
+
+*&---------------------------------------------------------------------*
+*&      Form  GET_KNA1_KUNNR
+*&---------------------------------------------------------------------*
+FORM get_kunnr_nm  USING    p_kunnr
+                        CHANGING p_name1.
+
+  CLEAR: p_name1.
+  SELECT SINGLE name1
+    INTO p_name1
+    FROM kna1
+   WHERE kunnr = p_kunnr.
+
+ENDFORM.                    " GET_KNA1_KUNNR
+
+
+*&---------------------------------------------------------------------*
+*&      Form  GET_KNA1_KUNWE
+*&---------------------------------------------------------------------*
+FORM get_kunwe_nm   USING    p_kunwe
+                    CHANGING p_name2
+                             "p_sortl.
+                             p_sort2.  "20121019_MMD03
+
+  DATA : l_adrnr LIKE kna1-adrnr.    "20121019_MMD03
+
+  CLEAR : p_name2, p_sort2, l_adrnr. "P_SORTL 20121019_MMD03
+
+* 20121019_MMD03 설계처검색어 필드값 수정
+*  SELECT SINGLE NAME1 SORTL
+*    INTO (P_NAME2 , P_SORTL)
+*    FROM KNA1
+*   WHERE KUNNR = P_KUNWE.
+  SELECT SINGLE name1 adrnr
+    INTO (p_name2 , l_adrnr)
+    FROM kna1
+   WHERE kunnr = p_kunwe.
+
+  SELECT SINGLE sort2
+    INTO p_sort2
+    FROM adrc
+   WHERE addrnumber = l_adrnr.
+* 20121019
+
+ENDFORM.                    " GET_KNA1_KUNWE
+
+
+*&---------------------------------------------------------------------*
+*&      Form  GET_MATNR_NM
+*&---------------------------------------------------------------------*
+FORM get_matnr_nm  USING    p_matnr
+                   CHANGING p_maktx.
+
+  CLEAR: p_maktx.
+  SELECT SINGLE maktx
+    INTO p_maktx
+    FROM makt
+   WHERE matnr = p_matnr
+     AND spras = sy-langu.
+
+ENDFORM.                    " GET_MATNR_NM
+
+*&---------------------------------------------------------------------*
+*&      Form  GET_VKGRP_NM
+*&---------------------------------------------------------------------*
+FORM get_vkgrp_nm  USING    p_vkgrp
+                   CHANGING p_bezei.
+
+  CLEAR: p_bezei.
+  SELECT SINGLE bezei
+    INTO p_bezei
+    FROM tvgrt
+   WHERE vkgrp = p_vkgrp
+     AND spras = sy-langu.
+
+ENDFORM.                    " GET_VKGRP_NM
+
+
+*&---------------------------------------------------------------------*
+*&      Form  GET_BZIRK_NM
+*&---------------------------------------------------------------------*
+FORM get_bzirk_nm  USING    p_bzirk
+                   CHANGING p_bztxt.
+
+  CLEAR: p_bztxt.
+  SELECT SINGLE bztxt
+    INTO p_bztxt
+    FROM t171t
+   WHERE bzirk = p_bzirk
+     AND spras = sy-langu.
+
+ENDFORM.                    " GET_BZIRK_NM
+
+
+*&---------------------------------------------------------------------*
+*&      Form  GET_VKGR2_NM
+*&---------------------------------------------------------------------*
+FORM get_vkgr2_nm  USING    p_vkgr2
+                   CHANGING p_bezej.
+
+  CLEAR: p_bezej.
+  SELECT SINGLE bezei
+    INTO p_bezej
+    FROM tvgrt
+   WHERE vkgrp = p_vkgr2
+     AND spras = sy-langu.
+
+ENDFORM.                    " GET_VKGR2_NM
+
+
+*&---------------------------------------------------------------------*
+*&      Form  GET_BZIR2_NM
+*&---------------------------------------------------------------------*
+FORM get_bzir2_nm  USING    p_bzir2
+                   CHANGING p_bztxj.
+
+  CLEAR: p_bztxj.
+  SELECT SINGLE bztxt
+    INTO p_bztxj
+    FROM t171t
+   WHERE bzirk = p_bzir2
+     AND spras = sy-langu.
+
+ENDFORM.                    " GET_BZIR2_NM
+
+
+*&---------------------------------------------------------------------*
+*&      Form  GET_BSARK_NM
+*&---------------------------------------------------------------------*
+FORM get_bsark_nm  USING    p_bsark
+                   CHANGING p_vtexk.
+
+  CLEAR: p_vtexk.
+  SELECT SINGLE vtext
+    INTO p_vtexk
+    FROM t176t
+   WHERE bsark = p_bsark
+     AND spras = sy-langu.
+
+ENDFORM.                    " GET_BSARK_NM
+
+
+*&---------------------------------------------------------------------*
+*&      Form  GET_MATKL_NM
+*&---------------------------------------------------------------------*
+FORM get_matkl_nm  USING    p_matkl
+                   CHANGING p_wgbez.
+
+  CLEAR: p_wgbez.
+  SELECT SINGLE wgbez
+    INTO p_wgbez
+    FROM t023t
+   WHERE matkl = p_matkl
+     AND spras = sy-langu.
+
+ENDFORM.                    " GET_MATKL_NM
+
+
+*&---------------------------------------------------------------------*
+*&      Form  GET_SPART_NM
+*&---------------------------------------------------------------------*
+FORM get_spart_nm  USING    p_spart
+                   CHANGING p_vtext.
+
+  CLEAR: p_vtext.
+  SELECT SINGLE vtext
+    INTO p_vtext
+    FROM tspat
+   WHERE spart = p_spart
+     AND spras = sy-langu.
+
+ENDFORM.                    " GET_SPART_NM
+
+*&---------------------------------------------------------------------*
+*&      Form  GET_MTART_NM
+*&---------------------------------------------------------------------*
+FORM get_mtart_nm  USING    p_mtart
+                   CHANGING p_mtbez.
+
+  CLEAR: p_mtbez.
+  SELECT SINGLE mtbez
+    INTO p_mtbez
+    FROM t134t
+   WHERE mtart = p_mtart
+     AND spras = sy-langu.
+
+ENDFORM.                    " GET_MTART_NM
+
+
+*&---------------------------------------------------------------------*
+*&      Form  GET_MVGR1_NM
+*&---------------------------------------------------------------------*
+FORM get_mvgr1_nm  USING    p_mvgr1
+                   CHANGING p_beze1.
+
+  CLEAR: p_beze1.
+  SELECT SINGLE bezei
+    INTO p_beze1
+    FROM tvm1t
+   WHERE mvgr1 = p_mvgr1
+     AND spras = sy-langu.
+
+ENDFORM.                    " GET_MVGR1_NM
+
+
+*&---------------------------------------------------------------------*
+*&      Form  GET_MVGR2_NM
+*&---------------------------------------------------------------------*
+FORM get_mvgr2_nm  USING    p_mvgr2
+                   CHANGING p_beze2.
+
+  CLEAR: p_beze2.
+  SELECT SINGLE bezei
+    INTO p_beze2
+    FROM tvm2t
+   WHERE mvgr2 = p_mvgr2
+     AND spras = sy-langu.
+
+ENDFORM.                    " GET_MVGR2_NM
+
+
+*&---------------------------------------------------------------------*
+*&      Form  GET_MVGR3_NM
+*&---------------------------------------------------------------------*
+FORM get_mvgr3_nm  USING    p_mvgr3
+                   CHANGING p_beze3.
+
+  CLEAR: p_beze3.
+  SELECT SINGLE bezei
+    INTO p_beze3
+    FROM tvm3t
+   WHERE mvgr3 = p_mvgr3
+     AND spras = sy-langu.
+
+ENDFORM.                    " GET_MVGR3_NM
+
+
+*&---------------------------------------------------------------------*
+*&      Form  GET_MVGR4_NM
+*&---------------------------------------------------------------------*
+FORM get_mvgr4_nm  USING    p_mvgr4
+                   CHANGING p_beze4.
+
+  CLEAR: p_beze4.
+  SELECT SINGLE bezei
+    INTO p_beze4
+    FROM tvm4t
+   WHERE mvgr4 = p_mvgr4
+     AND spras = sy-langu.
+
+ENDFORM.                    " GET_MVGR4_NM
+
+
+*&---------------------------------------------------------------------*
+*&      Form  GET_MVGR5_NM
+*&---------------------------------------------------------------------*
+FORM get_mvgr5_nm  USING    p_mvgr5
+                   CHANGING p_beze5.
+
+  CLEAR: p_beze5.
+  SELECT SINGLE bezei
+    INTO p_beze5
+    FROM tvm5t
+   WHERE mvgr5 = p_mvgr5
+     AND spras = sy-langu.
+
+ENDFORM.                    " GET_MVGR5_NM
+
+
+*&---------------------------------------------------------------------*
+*&      Form  GET_MVGR6_NM
+*&---------------------------------------------------------------------*
+FORM get_mvgr6_nm  USING    p_provg
+                   CHANGING p_vtex6.
+
+  CLEAR: p_vtex6.
+  SELECT SINGLE vtext
+    INTO p_vtex6
+    FROM tvprt
+   WHERE provg = p_provg
+     AND spras = sy-langu.
+
+ENDFORM.                    " GET_MVGR6_NM
+*&---------------------------------------------------------------------*
+*&      Form  GET_MVGR6_NM
+*&---------------------------------------------------------------------*
+FORM get_mvgr7_nm  USING    p_mvgr6
+                   CHANGING p_beze6.
+
+  CLEAR: p_beze6.
+  SELECT SINGLE bezei
+    INTO p_beze6
+    FROM zmmt0024
+   WHERE mvgr6 = p_mvgr6.
+
+ENDFORM.                    " GET_MVGR6_NM
+
+
+*&---------------------------------------------------------------------*
+*&      Form  WRITE_DATA
+*&---------------------------------------------------------------------*
+FORM write_data .
+
+  PERFORM init_alv_parm.
+
+  CALL FUNCTION 'REUSE_ALV_GRID_DISPLAY'
+    EXPORTING
+      i_callback_program       = g_repid
+      i_callback_pf_status_set = g_status
+      i_callback_user_command  = g_user_command
+      is_layout                = gs_layout
+      it_fieldcat              = gt_fieldcat
+      it_sort                  = gt_sort
+      i_save                   = g_save
+      is_variant               = g_variant
+      it_events                = gt_events
+    TABLES
+      t_outtab                 = gt_main
+    EXCEPTIONS
+      program_error            = 1
+      OTHERS                   = 2.
+
+ENDFORM.                    " WRITE_DATA
+
+
+*&---------------------------------------------------------------------*
+*&      Form  INIT_ALV_PARM
+*&---------------------------------------------------------------------*
+FORM init_alv_parm .
+
+  gs_layout-zebra            = 'X'.
+  gs_layout-colwidth_optimize = 'X'.
+  gs_layout-box_tabname      = 'GT_MAIN'.
+  gs_layout-box_fieldname    = 'MARK'.
+  g_variant-report           = sy-repid .
+  g_save                     = 'A'.
+***   Initialization fieldcatalog   ***
+  g_repid = sy-repid.
+  PERFORM fieldcat_init  USING gt_fieldcat[].
+  PERFORM eventtab_build USING gt_events[].
+  PERFORM comment_build  USING gt_list_top_of_page[].
+  PERFORM sort_build USING gt_sort[].
+ENDFORM.                    " INIT_ALV_PARM
+
+
+*&---------------------------------------------------------------------*
+*&      Form  FIELDCAT_INIT
+*&---------------------------------------------------------------------*
+FORM fieldcat_init  USING rt_fieldcat TYPE slis_t_fieldcat_alv.
+
+  DATA: ls_fieldcat TYPE slis_fieldcat_alv.
+  DATA: pos TYPE i.
+  DEFINE catalog.
+    pos = pos + 1.
+    CLEAR ls_fieldcat.
+    ls_fieldcat-col_pos       = pos.
+    ls_fieldcat-key           = &1.
+    ls_fieldcat-fieldname     = &2.
+    ls_fieldcat-ref_tabname   = &3.
+    ls_fieldcat-ref_fieldname = &4.
+    ls_fieldcat-reptext_ddic  = &5.
+*    LS_FIELDCAT-DO_SUM        = &6.
+    ls_fieldcat-hotspot       = &6.
+    ls_fieldcat-outputlen     = &7.
+*    LS_FIELDCAT-JUST          = &8.
+*    LS_FIELDCAT-NO_OUT        = &8.
+*    LS_FIELDCAT-EMPHSIZE      = &8.
+    ls_fieldcat-cfieldname    = &8.
+    ls_fieldcat-currency      = &9.
+
+    ls_fieldcat-seltext_l = &5.
+    ls_fieldcat-seltext_m = &5.
+    ls_fieldcat-seltext_s = &5.
+    ls_fieldcat-ddictxt   = 'M'.
+
+    CASE ls_fieldcat-fieldname.
+      WHEN 'FKIMG'.
+        ls_fieldcat-qfieldname = 'VRKME'.
+*      WHEN 'VBELN' OR 'NAME1' OR 'CLMENG' OR 'OWMENG'.
+*        LS_FIELDCAT-HOTSPOT = 'X'.
+*      WHEN 'RMENG'.
+*        LS_FIELDCAT-EMPHASIZE = 'C5110'.
+    ENDCASE.
+
+    APPEND ls_fieldcat TO  rt_fieldcat.
+  END-OF-DEFINITION.
+
+  IF p_radi1 ='X'.
+    catalog:
+    'X'  'FKDAT'   'VBRK'  'FKDAT'  '청구일'           ''  '10' '' '',
+    'X'  'VBELN'   'VBRP'  'VBELN'  '대금청구문서'     'X' '20' '' '',
+    'X'  'POSNR'   'VBRP'  'POSNR'  '대금청구품번'     ''  '20' '' '',
+    ' '  'AUART'   'VBAK'  'AUART'  '오더TYPE'         ''  '16' '' '',
+    ' '  'AUBEL'   'VBRP'  'AUBEL'  '매출오더문서'     'X' '16' '' '',
+    ' '  'AUPOS'   'VBRP'  'AUPOS'  '매출오더품번'     ''  '16' '' '',
+    ' '  'BSARK'   'VBKD'  'BSARK'  '영업형태'         ''  '10' '' '',
+    ' '  'VTEXK'   'T176T' 'VTEXT'  '영업형태명'       ''  '12' '' '',
+    ' '  'VKGRP'   'KNVV'  'VKGRP'  '판매처그룹'       ''  '12' '' '',
+    ' '  'BEZEI'   'TVGRT' 'BEZEI'  '판매처그룹명'     ''  '20' '' '',
+    ' '  'BZIRK'   'KVNN'  'BZIRK'  '판매처지역'       ''  '12' '' '',
+    ' '  'BZTXT'   'T171T' 'BZTXT'  '판매처지역명'     ''  '20' '' '',
+    ' '  'KUNNR'   'VBAK'  'KUNNR'  '판매처'           ''  '10' '' '',
+    ' '  'NAME1'   'KNA1'  'NAME1'  '판매처명'         ''  '10' '' '',
+    ' '  'VKGR2'   'VBRK'  'VKGRP'  '설계처그룹'       ''  '10' '' '',
+    ' '  'BEZEJ'   'TVGRT' 'BEZEI'  '설계처그룹명'     ''  '20' '' '',
+    ' '  'BZIR2'   'KVNN'  'BZIRK'  '설계처지역'       ''  '12' '' '',
+    ' '  'BZTXJ'   'T171T' 'BZTXT'  '설계처지역명'     ''  '20' '' '',
+    ' '  'KUNWE'   'VBAK'  'KUNNR'  '설계처'           ''  '10' '' '',
+    ' '  'NAME2'   'KNA1'  'NAME1'  '설계처명'         ''  '16' '' '',
+*' '  'SORTL'   'KNA1'  'SORTL'  '설계처검색어'     ''  '16' '' '',
+*"20121019_MMD03
+    ' '  'SORT2'   'ADRC'  'SORT2'  '설계처검색어'     ''  '16' '' '',
+    "20121019_MMD03
+    ' '  'MATNR'   'MARA'  'MATNR'  '자재'             'X' '10' '' '',
+    ' '  'MAKTX'   'MAKT'  'MAKTX'  '자재명'           ''  '10' '' '',
+    ' '  'FKIMG'   'VBRP'  'FKIMG'  '청구수량'         ''  '10' '' '',
+    ' '  'VRKME'   'VBAP'  'VRKME'  '단위'             ''  '10' '' '',
+    ' '  'KZWI1'   'VBRP'  'KZWI1'  '판가'             ''  '10' 'WAERK' ''
+    ,
+    ' '  'KZWI2'   'VBRP'  'KZWI2'  '매출할인'         ''  '10' 'WAERK' '',
+    ' '  'KZWI3'   'VBRP'  'KZWI3'  '본사마진'         ''  '10' 'WAERK' '',
+    ' '  'KZWI4'   'VBRP'  'KZWI4'  '설치수수료'       ''  '12' 'WAERK' '',
+    ' '  'NETWR'   'VBAP'  'NETWR'  '청구금액'         ''  '10' 'WAERK' '',
+    ' '  'WAERK'   'VBAP'  'WAERK'  '단위'             ''  '10' '' '',
+    ' '  'MATKL'   'MARA'  'MATKL'  '자재그룹'         ''  '10' '' '',
+    ' '  'WGBEZ'   'T023T' 'WGBEZ'  '자재그룹명'       ''  '10' '' '',
+    ' '  'SPART'   'MARA'  'SPART'  '제품군'           ''  '10' '' '',
+    ' '  'VTEXT'   'TSPAT' 'VTEXT'  '제품군명'         ''  '10' '' '',
+    ' '  'MTART'   'MARA'  'MTART'  '자재유형'         ''  '10' '' '',
+    ' '  'MTBEZ'   'T134T' 'MTBEZ'  '자재유형명'       ''  '10' '' '',
+    ' '  'MVGR1'   'MVKE'  'MVGR1'  '자재그룹1'        ''  '10' '' '',
+    ' '  'BEZE1'   'TVM1T' 'BWZEI'  '자재그룹1명'      ''  '12' '' '',
+    ' '  'MVGR2'   'MVKE'  'MVGR1'  '자재그룹2'        ''  '10' '' '',
+    ' '  'BEZE2'   'TVM2T' 'BWZEI'  '자재그룹2명'      ''  '12' '' '',
+    ' '  'MVGR3'   'MVKE'  'MVGR1'  '자재그룹3'        ''  '10' '' '',
+    ' '  'BEZE3'   'TVM3T' 'BWZEI'  '자재그룹3명'      ''  '12' '' '',
+    ' '  'MVGR4'   'MVKE'  'MVGR1'  '자재그룹4'        ''  '10' '' '',
+    ' '  'BEZE4'   'TVM4T' 'BWZEI'  '자재그룹4명'      ''  '12' '' '',
+    ' '  'MVGR5'   'MVKE'  'MVGR1'  '자재그룹5'        ''  '10' '' '',
+    ' '  'BEZE5'   'TVM5T' 'BWZEI'  '자재그룹5명'      ''  '12' '' '',
+
+*──────────────>> 2012.12.06 자재그룹 순서 7, 6, 8, 9 로 변경
+    ' '  'MVGR6'   'MVKE'     'MVGR6'  '자재그룹7'     ''  '10' '' '',
+    ' '  'BEZE6'   'ZMMT0024' 'BEZEI'  '자재그룹7명'   ''  '12' '' '',
+    ' '  'PROVG'   'MVKE'     'PROVG'  '자재그룹6'     ''  '10' '' '',
+    ' '  'VTEX6'   'TVPRT'    'VTEXT'  '자재그룹6명'   ''  '12' '' '',
+    ' '  'MVGR7'   'MVKE'     'MVGR7'  '자재그룹8'     ''  '10' '' '',
+    ' '  'BEZE7'   'ZMMT0025' 'BEZEI'  '자재그룹8명'   ''  '12' '' '',
+    ' '  'MVGR9'   'MVKE'     'MVGR9'  '자재그룹9'     ''  '10' '' '',
+    ' '  'BEZE9'   'ZMMT0026' 'BEZEI'  '자재그룹9명'   ''  '12' '' '',
+
+*──────────────<< 2012.12.06 자재그룹 순서 변경
+*──────────────>> 2013.09.11 자재그룹 10, 11 추가.
+    ' '  'MVGR10'  'MVKE'     'MVGR10'  '자재그룹10'     ''  '10' '' '',
+    ' '  'BEZE10'  'ZMMT0027' 'BEZEI'   '자재그룹10명'   ''  '12' '' '',
+    ' '  'MVGR11'  'MVKE'     'MVGR11'  '자재그룹11'     ''  '10' '' '',
+    ' '  'BEZE11'  'ZMMT0028' 'BEZEI'   '자재그룹11명'   ''  '12' '' '',
+    ' '  'NORMT'   'MARA'     'NORMT'   '통합코드'       ''  '10' '' '',
+    ' '  'BEZEI_N' 'ZMMT0040' 'BEZEI'   '통합코드명'     ''  '12' '' '',
+    ' '  'BONUS'   'MVKE'     'BONUS'   '특성값'         ''  '10' '' '',
+    ' '  'VTEXT1'  'TVBOT'    'VTEXT'   '특성값명'       ''  '12' '' '',
+*──────────────<< 2013.09.11 자재그룹 10, 11 추가.
+    ' '  'PRAT2'   'MVKE'  'PRAT2'  '설계모델'         ''  '10' '' '',
+    ' '  'AUGRU'   'VBAK'  'AUGRU'  '오더사유'         ''  '16' '' '',
+    " 20150109 추가 MMD03
+    ' '  'BEZEI2'   'TVAUT'  'BEZEI'  '오더사유내역'    ''  '40' '' '',
+    " 20150109 추가 MMD03
+    ' '  'BSTKD'   'VBKD'  'BSTKD'  'PO번호'         ''  '35' '' '',
+    " 20150109 추가 MMD03
+    ' '  'BSTDK'   'VBKD'  'BSTDK'  'PO일자'         ''  '16' '' ''.
+    " 20150109 추가 MMD03
+  ENDIF.
+
+  IF p_radi2 ='X'.
+    catalog:
+    'X'  'FKMON'   ''      ''       '청구월'           ''  '07' '' '',
+    ' '  'VKGRP'   'KNVV'  'VKGRP'  '판매처그룹'       ''  '12' '' '',
+    ' '  'BEZEI'   'TVGRT' 'BEZEI'  '판매처그룹명'     ''  '20' '' '',
+    ' '  'BZIRK'   'KVNN'  'BZIRK'  '판매처지역'       ''  '12' '' '',
+    ' '  'BZTXT'   'T171T' 'BZTXT'  '판매처지역명'     ''  '20' '' '',
+    ' '  'KUNNR'   'VBAK'  'KUNNR'  '판매처'           ''  '10' '' '',
+    ' '  'NAME1'   'KNA1'  'NAME1'  '판매처명'         ''  '10' '' '',
+    ' '  'VKGR2'   'VBRK'  'VKGRP'  '설계처그룹'       ''  '10' '' '',
+    ' '  'BEZEJ'   'TVGRT' 'BEZEI'  '설계처그룹명'     ''  '20' '' '',
+    ' '  'BZIR2'   'KVNN'  'BZIRK'  '설계처지역'       ''  '12' '' '',
+    ' '  'BZTXJ'   'T171T' 'BZTXT'  '설계처지역명'     ''  '20' '' '',
+    ' '  'KUNWE'   'VBAK'  'KUNNR'  '설계처'           ''  '10' '' '',
+    ' '  'NAME2'   'KNA1'  'NAME1'  '설계처명'         ''  '16' '' '',
+*' '  'SORTL'   'KNA1'  'SORTL'  '설계처검색어'     ''  '16' '' '',
+*"20121019_MMD03
+    ' '  'SORT2'   'ADRC'  'SORT2'  '설계처검색어'     ''  '16' '' '',
+    "20121019_MMD03
+    ' '  'MATNR'   'MARA'  'MATNR'  '자재'             'X' '10' '' '',
+    ' '  'MAKTX'   'MAKT'  'MAKTX'  '자재명'           ''  '10' '' '',
+    ' '  'FKIMG'   'VBRP'  'FKIMG'  '청구수량'         ''  '10' '' '',
+    ' '  'VRKME'   'VBAP'  'VRKME'  '단위'             ''  '10' '' '',
+    ' '  'KZWI1'   'VBRP'  'KZWI1'  '판가'             ''  '10' 'WAERK' ''
+    ,
+    ' '  'KZWI2'   'VBRP'  'KZWI2'  '매출할인'         ''  '10' 'WAERK' '',
+    ' '  'KZWI3'   'VBRP'  'KZWI3'  '본사마진'         ''  '10' 'WAERK' '',
+    ' '  'KZWI4'   'VBRP'  'KZWI4'  '설치수수료'       ''  '12' 'WAERK' '',
+    ' '  'NETWR'   'VBAP'  'NETWR'  '청구금액'         ''  '10' 'WAERK' '',
+    ' '  'WAERK'   'VBAP'  'WAERK'  '단위'             ''  '10' '' '',
+    ' '  'PRAT2'   'MVKE'  'PRAT2'  '설계모델'         ''  '10' '' ''.
+  ENDIF.
+
+  IF p_radi3 ='X'.
+    catalog:
+    ' '  'VKGRP'   'KNVV'  'VKGRP'  '판매처그룹'       ''  '12' '' '',
+    ' '  'BEZEI'   'TVGRT' 'BEZEI'  '판매처그룹명'     ''  '20' '' '',
+    ' '  'BZIRK'   'KVNN'  'BZIRK'  '판매처지역'       ''  '12' '' '',
+    ' '  'BZTXT'   'T171T' 'BZTXT'  '판매처지역명'     ''  '20' '' '',
+    ' '  'KUNNR'   'VBAK'  'KUNNR'  '판매처'           ''  '10' '' '',
+    ' '  'NAME1'   'KNA1'  'NAME1'  '판매처명'         ''  '10' '' '',
+    ' '  'VKGR2'   'VBRK'  'VKGRP'  '설계처그룹'       ''  '10' '' '',
+    ' '  'BEZEJ'   'TVGRT' 'BEZEI'  '설계처그룹명'     ''  '20' '' '',
+    ' '  'BZIR2'   'KVNN'  'BZIRK'  '설계처지역'       ''  '12' '' '',
+    ' '  'BZTXJ'   'T171T' 'BZTXT'  '설계처지역명'     ''  '20' '' '',
+    ' '  'KUNWE'   'VBAK'  'KUNNR'  '설계처'           ''  '10' '' '',
+    ' '  'NAME2'   'KNA1'  'NAME1'  '설계처명'         ''  '16' '' '',
+*' '  'SORTL'   'KNA1'  'SORTL'  '설계처검색어'     ''  '16' '' '',
+*"20121019_MMD03
+    ' '  'SORT2'   'ADRC'  'SORT2'  '설계처검색어'     ''  '16' '' '',
+    "20121019_MMD03
+    ' '  'MATNR'   'MARA'  'MATNR'  '자재'             'X' '10' '' '',
+    ' '  'MAKTX'   'MAKT'  'MAKTX'  '자재명'           ''  '10' '' '',
+    ' '  'FKIMG'   'VBRP'  'FKIMG'  '청구수량'         ''  '10' '' '',
+    ' '  'VRKME'   'VBAP'  'VRKME'  '단위'             ''  '10' '' '',
+    ' '  'KZWI1'   'VBRP'  'KZWI1'  '판가'             ''  '10' 'WAERK' ''
+    ,
+    ' '  'KZWI2'   'VBRP'  'KZWI2'  '매출할인'         ''  '10' 'WAERK' '',
+    ' '  'KZWI3'   'VBRP'  'KZWI3'  '본사마진'         ''  '10' 'WAERK' '',
+    ' '  'KZWI4'   'VBRP'  'KZWI4'  '설치수수료'       ''  '12' 'WAERK' '',
+    ' '  'NETWR'   'VBAP'  'NETWR'  '청구금액'         ''  '10' 'WAERK' '',
+    ' '  'WAERK'   'VBAP'  'WAERK'  '단위'             ''  '10' '' '',
+    ' '  'PRAT2'   'MVKE'  'PRAT2'  '설계모델'         ''  '10' '' ''.
+  ENDIF.
+
+  IF p_radi4 ='X'.
+    catalog:
+    'X'  'FKWEK'   ''      ''       '청구주'           ''  '07' '' '',
+    ' '  'VKGRP'   'KNVV'  'VKGRP'  '판매처그룹'       ''  '12' '' '',
+    ' '  'BEZEI'   'TVGRT' 'BEZEI'  '판매처그룹명'     ''  '20' '' '',
+    ' '  'BZIRK'   'KVNN'  'BZIRK'  '판매처지역'       ''  '12' '' '',
+    ' '  'BZTXT'   'T171T' 'BZTXT'  '판매처지역명'     ''  '20' '' '',
+    ' '  'KUNNR'   'VBAK'  'KUNNR'  '판매처'           ''  '10' '' '',
+    ' '  'NAME1'   'KNA1'  'NAME1'  '판매처명'         ''  '10' '' '',
+    ' '  'VKGR2'   'VBRK'  'VKGRP'  '설계처그룹'       ''  '10' '' '',
+    ' '  'BEZEJ'   'TVGRT' 'BEZEI'  '설계처그룹명'     ''  '20' '' '',
+    ' '  'BZIR2'   'KVNN'  'BZIRK'  '설계처지역'       ''  '12' '' '',
+    ' '  'BZTXJ'   'T171T' 'BZTXT'  '설계처지역명'     ''  '20' '' '',
+    ' '  'KUNWE'   'VBAK'  'KUNNR'  '설계처'           ''  '10' '' '',
+    ' '  'NAME2'   'KNA1'  'NAME1'  '설계처명'         ''  '16' '' '',
+*' '  'SORTL'   'KNA1'  'SORTL'  '설계처검색어'     ''  '16' '' '',
+*"20121019_MMD03
+    ' '  'SORT2'   'ADRC'  'SORT2'  '설계처검색어'     ''  '16' '' '',
+    "20121019_MMD03
+    ' '  'MATNR'   'MARA'  'MATNR'  '자재'             'X' '10' '' '',
+    ' '  'MAKTX'   'MAKT'  'MAKTX'  '자재명'           ''  '10' '' '',
+    ' '  'FKIMG'   'VBRP'  'FKIMG'  '청구수량'         ''  '10' '' '',
+    ' '  'VRKME'   'VBAP'  'VRKME'  '단위'             ''  '10' '' '',
+    ' '  'KZWI1'   'VBRP'  'KZWI1'  '판가'             ''  '10' 'WAERK' ''
+    ,
+    ' '  'KZWI2'   'VBRP'  'KZWI2'  '매출할인'         ''  '10' 'WAERK' '',
+    ' '  'KZWI3'   'VBRP'  'KZWI3'  '본사마진'         ''  '10' 'WAERK' '',
+    ' '  'KZWI4'   'VBRP'  'KZWI4'  '설치수수료'       ''  '12' 'WAERK' '',
+    ' '  'NETWR'   'VBAP'  'NETWR'  '청구금액'         ''  '10' 'WAERK' '',
+    ' '  'WAERK'   'VBAP'  'WAERK'  '단위'             ''  '10' '' '',
+    ' '  'PRAT2'   'MVKE'  'PRAT2'  '설계모델'         ''  '10' '' ''.
+  ENDIF.
+
+  IF p_vkbur = 'E100'.
+    catalog:
+    ' '  'KZWI5'   'VBRP'  'KZWI1'  '판가(USD)'             ''  '10'
+    'WAUSD' '',
+    ' '  'KZWI6'   'VBRP'  'KZWI2'  '매출할인(USD)'         ''  '10' 'WAUSD'
+    '',
+    ' '  'KZWI7'   'VBRP'  'KZWI3'  '청구금액(USD)'         ''  '10' 'WAUSD'
+    '',
+    ' '  'WAUSD'   'VBAP'  'WAERK'  '단위(USD)'             ''  '10' '' ''
+    .
+  ENDIF.
+
+*--- 2018.04.27 김동근 추가 - S
+  IF p_vkbur = 'R100' AND p_radi1 = 'X'.
+    catalog:
+    ' '  'GWLDT'   'VBAK'  'GWLDT'  '계약일자'             '' '10' '' ''.
+  ENDIF.
+*--- 2018.04.27 김동근 추가 - E
+
+  IF p_vkbur = 'S100' .
+    catalog:
+    ' '  'BDTER'   'RESB'  'BDTER'  '소요일자'             '' '10' '' ''.
+  ENDIF.
+
+*--- 2018.04.27 김동근 추가 - E
+
+
+
+
+ENDFORM.                    " FIELDCAT_INIT
+
+
+*&---------------------------------------------------------------------*
+*&      Form  EVENTTAB_BUILD
+*&---------------------------------------------------------------------*
+FORM eventtab_build   USING    p_gt_events TYPE slis_t_event.
+
+  DATA: ls_event  TYPE slis_alv_event.
+  ls_event-name  =  'TOP_OF_PAGE'.         " Event name
+  ls_event-form  =  'TOP_OF_PAGE'.         " Perform
+  APPEND ls_event TO p_gt_events.
+
+
+ENDFORM.                    " EVENTTAB_BUILD
+
+
+*&---------------------------------------------------------------------*
+*&      Form  COMMENT_BUILD
+*&---------------------------------------------------------------------*
+FORM comment_build  USING  it_top_of_page  TYPE slis_t_listheader.
+
+  DATA: lt_line     TYPE slis_listheader,
+        lt_text(30).
+
+* Header 정의
+  CLEAR lt_line.
+  lt_line-typ     =  'H'.   " Header
+  CONCATENATE gv_text2 '_' TEXT-t03 INTO lt_line-info.
+  CONCATENATE lt_line-info '(' s_bukrs-low ')'
+         INTO lt_line-info.
+  APPEND lt_line  TO it_top_of_page.
+
+* Selection 정의
+  CLEAR lt_line.
+  lt_line-key  = '대금청구일 :'.
+  lt_line-typ  = 'S'.
+  CONCATENATE s_fkdat-low '~' s_fkdat-high INTO lt_line-info.
+  APPEND lt_line TO it_top_of_page.
+
+  CLEAR lt_line.
+  lt_line-key  = '검색조건  :'.
+  lt_line-typ  = 'S'.
+  WRITE gv_text1 TO lt_line-info .
+  APPEND lt_line TO it_top_of_page.
+
+  CLEAR lt_line.
+  lt_line-key  = '조회건수  :'.
+  lt_line-typ  = 'S'.
+  WRITE g_totlines TO lt_line-info .
+  APPEND lt_line TO it_top_of_page.
+
+*  CLEAR LT_LINE.
+*  LT_LINE-TYP     =  'S'.   " SELECTION
+*  LT_LINE-KEY     =  TEXT-T04.
+*  WRITE SY-DATUM TO LT_LINE-INFO USING EDIT MASK '____.__.__' .
+*  lt_line-info    =  SY-DATUM.
+*  APPEND LT_LINE  TO IT_TOP_OF_PAGE.
+* Action 정의
+*  CLEAR LT_LINE.
+*  LT_LINE-TYP     =  'A'.
+*  LT_LINE-INFO    =  'Detail List'.
+*  APPEND LT_LINE  TO IT_TOP_OF_PAGE.
+
+ENDFORM.                    " COMMENT_BUILD
+
+*&---------------------------------------------------------------------*
+*&      Form  SORT_BUILD
+*&---------------------------------------------------------------------*
+FORM sort_build  USING    gt_sort TYPE slis_t_sortinfo_alv.
+
+*  CLEAR GT_SORT_LINE.
+*  GT_SORT_LINE-SPOS      = '1'.
+*  GT_SORT_LINE-FIELDNAME = 'FKDAT'.
+*  GT_SORT_LINE-UP        = 'X'.
+*  GT_SORT_LINE-SUBTOT    = 'X'.
+*  APPEND GT_SORT_LINE TO GT_SORT.
+*  GT_SORT_LINE-SPOS      = '2'.
+*  GT_SORT_LINE-FIELDNAME = 'VBELN'.
+*  GT_SORT_LINE-UP        = 'X'.
+*  GT_SORT_LINE-SUBTOT    = 'X'.
+*  APPEND GT_SORT_LINE TO GT_SORT.
+*  GT_SORT_LINE-SPOS      = '3'.
+*  GT_SORT_LINE-FIELDNAME = 'KUNNR'.
+*  GT_SORT_LINE-UP        = 'X'.
+**  GT_SORT_LINE-SUBTOT    = 'X'.
+
+
+ENDFORM.                    " SORT_BUILD
+
+*&--------------------------------------------------------------------*
+*&      Form  TOP_OF-PAGE
+*&--------------------------------------------------------------------*
+FORM top_of_page.
+
+  CALL FUNCTION 'REUSE_ALV_COMMENTARY_WRITE'
+    EXPORTING
+*     I_LOGO             = 'ZDW01'
+      it_list_commentary = gt_list_top_of_page.
+
+ENDFORM.                    " TOP_OF_PAGE
+
+
+* ------------------------
+* form set_status
+* ------------------------
+FORM   status    USING  rt_extab  TYPE  slis_t_extab.
+
+  SET PF-STATUS  'STANDARD' EXCLUDING rt_extab.
+
+ENDFORM.                    "STATUS
+********************************************************************
+*
+* --------------------------
+* form   user_command
+* --------------------------
+FORM   user_command   USING       r_ucomm     LIKE  sy-ucomm
+                                  rs_selfield TYPE  slis_selfield.
+  DATA: lv_answer.
+
+  CASE r_ucomm.
+* hotspot click
+    WHEN '&IC1'.
+      READ TABLE gt_main INDEX rs_selfield-tabindex.
+
+      CASE rs_selfield-fieldname.
+        WHEN 'VBELN'.        "대금청구문서
+          SET PARAMETER ID 'VF' FIELD gt_main-vbeln.
+          CALL TRANSACTION 'VF03'
+          AND SKIP FIRST SCREEN.
+
+        WHEN 'AUBEL'.        "매출오더문서
+          SET PARAMETER ID 'AUN' FIELD gt_main-aubel.
+          CALL TRANSACTION 'VA03'
+          AND SKIP FIRST SCREEN.
+
+        WHEN 'MATNR'.         "자재조회
+          SET PARAMETER ID 'MAT' FIELD gt_main-matnr.
+          CALL TRANSACTION 'MM03'
+          AND SKIP FIRST SCREEN..
+
+      ENDCASE.
+  ENDCASE.
+
+  rs_selfield-refresh    = 'X'.
+  rs_selfield-col_stable = 'X'.
+  rs_selfield-row_stable = 'X'.
+
+ENDFORM.              " user_command
+*&---------------------------------------------------------------------*
+*&      Form  GET_MVGR8_NM
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+FORM get_mvgr8_nm  USING    p_mvgr7
+                   CHANGING p_beze7.
+
+  CLEAR: p_beze7.
+  SELECT SINGLE bezei
+    INTO p_beze7
+    FROM zmmt0025
+   WHERE mvgr7 = p_mvgr7.
+
+ENDFORM.                    " GET_MVGR8_NM
+*&---------------------------------------------------------------------*
+*&      Form  GET_MVGR9_NM
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+FORM get_mvgr9_nm  USING    p_mvgr9
+                   CHANGING p_beze9.
+
+  CLEAR: p_beze9.
+  SELECT SINGLE bezei
+    INTO p_beze9
+    FROM zmmt0026
+   WHERE mvgr9 = p_mvgr9.
+
+ENDFORM.                    " GET_MVGR8_NM
+*&---------------------------------------------------------------------*
+*&      Form  GET_MVGR10_NM
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*      -->P_GT_MAIN_MVGR10  text
+*      <--P_GT_MAIN_BEZE10  text
+*----------------------------------------------------------------------*
+FORM get_mvgr10_nm USING    p_mvgr10
+                   CHANGING p_beze10.
+
+  CLEAR: p_beze10.
+  SELECT SINGLE bezei
+    INTO p_beze10
+    FROM zmmt0027
+   WHERE mvgr10 = p_mvgr10.
+
+ENDFORM.                    " GET_MVGR10_NM
+*&---------------------------------------------------------------------*
+*&      Form  GET_MVGR11_NM
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*      -->P_GT_MAIN_MVGR11  text
+*      <--P_GT_MAIN_BEZE11  text
+*----------------------------------------------------------------------*
+FORM get_mvgr11_nm USING    p_mvgr11
+                   CHANGING p_beze11.
+
+  CLEAR: p_beze11.
+  SELECT SINGLE bezei
+    INTO p_beze11
+    FROM zmmt0028
+   WHERE mvgr11 = p_mvgr11.
+
+ENDFORM.                    " GET_MVGR11_NM
+*&---------------------------------------------------------------------*
+*&      Form  GET_NORMT_NM
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*      -->P_GT_MAIN_NORMT  text
+*      <--P_GT_MAIN_BEZEI_N  text
+*----------------------------------------------------------------------*
+FORM get_normt_nm  USING    p_normt
+                   CHANGING p_bezei_n.
+
+  CLEAR: p_bezei_n.
+  SELECT SINGLE bezei
+    INTO p_bezei_n
+    FROM zmmt0040
+   WHERE normt = p_normt.
+
+ENDFORM.                    " GET_NORMT_NM
+*&---------------------------------------------------------------------*
+*&      Form  GET_NORMT
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*      -->P_GT_DATA_MATNR  text
+*      <--P_GT_DATA_NORMT  text
+*----------------------------------------------------------------------*
+FORM get_normt  USING   p_matnr
+                CHANGING p_normt.
+
+  CLEAR: p_normt.
+  SELECT SINGLE normt
+    INTO p_normt
+    FROM mara
+   WHERE matnr = p_matnr.
+
+ENDFORM.                    " GET_NORMT
+*&---------------------------------------------------------------------*
+*&      Form  GET_BONUS
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*      -->P_GT_DATA_MATNR  text
+*      <--P_GT_DATA_BONUS  text
+*----------------------------------------------------------------------*
+FORM get_bonus   USING   p_matnr
+                CHANGING p_bonus.
+
+  CLEAR: p_bonus.
+  SELECT SINGLE bonus
+    INTO p_bonus
+    FROM mvke
+   WHERE matnr = p_matnr.
+
+ENDFORM.                    " GET_BONUS
+*&---------------------------------------------------------------------*
+*&      Form  GET_BONUS_NM
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*      -->P_GT_MAIN_BONUS  text
+*      <--P_GT_MAIN_VTEXT1  text
+*----------------------------------------------------------------------*
+FORM get_bonus_nm  USING    p_bonus
+                   CHANGING p_vtext1.
+
+  CLEAR: p_vtext1.
+  SELECT SINGLE vtext
+    INTO p_vtext1
+    FROM tvbot
+   WHERE bonus = p_bonus
+     AND spras = sy-langu.
+
+ENDFORM.                    " GET_BONUS_NM
+
+INCLUDE zsdr0340_get_bstkd_bstdkf01.
+
+INCLUDE zsdr0340_get_augru_nmf01.
+*&---------------------------------------------------------------------*
+*&      Form  COLLECT_P_RADI4
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+FORM collect_p_radi4 .
+
+*& 각 오더TYPE 별 금액 산출하기
+*& GT_DATA 에 금액필드는 가격결정절차에 의해 저장되어진 값이며,
+*& GT_MAIN 에 판가(KZWI1),매출할인(KZWI2),본사마진(KZWI3),설치수수료(KZWI4)로 저장
+*& 2015.04.24 주별 collect 로직 추가. 함돈욱 요청.
+  LOOP AT gt_data.
+
+*& Credit/Debit Memo는 수량을 0으로 표기
+    IF gt_data-fkart(02) = 'ZG' OR gt_data-fkart(02) = 'ZL'.
+      CLEAR: gt_data-fkimg.
+    ENDIF.
+
+*& 반품에 대한 금액 산출
+    IF gt_data-shkzg = 'X'.
+      CASE gt_data-auaru.
+        WHEN 'ZDKF' OR 'ZDKG' OR 'ZDKH' OR 'ZDKI' OR 'ZDKJ' OR 'ZDKK' OR
+             'ZDKL' OR 'ZDKM'.  "2018.10.25 추가.
+          gt_main-kzwi1 = ( gt_data-kzwi1 ) * -1.
+          gt_main-kzwi2 = ( gt_data-netwr - ( gt_data-kzwi1 +
+          gt_data-kzwi2 + gt_data-kzwi4 ) ) * -1.
+          gt_main-kzwi3 = ( gt_data-kzwi2 ) * -1.
+          gt_main-kzwi4 = ( gt_data-kzwi4 ) * -1.
+        WHEN 'ZDKB'.
+          gt_main-kzwi1 = ( gt_data-netwr - gt_data-kzwi2 ) * -1.
+          gt_main-kzwi3 = ( gt_data-kzwi2 + gt_data-kzwi3 ) * -1.
+          gt_main-kzwi4 = gt_data-kzwi3.
+        WHEN OTHERS.
+          gt_main-kzwi1 = ( gt_data-netwr - ( gt_data-kzwi2 ) ) * -1.
+          gt_main-kzwi2 = ( gt_data-kzwi2 ) * -1.
+          gt_main-kzwi5 = ( gt_data-kzwi5 ) * -1.
+          gt_main-kzwi6 = ( gt_data-kzwi6 ) * -1.
+      ENDCASE.
+      gt_main-fkimg = gt_data-fkimg * -1.
+      gt_main-netwr = gt_data-netwr * -1.
+      gt_main-kzwi7 = gt_data-kzwi7 * -1.
+    ELSE.
+
+*& 매출에 대한 금액 산출
+      CASE gt_data-auart.
+        WHEN 'ZDKF' OR 'ZDKG' OR 'ZDKH' OR 'ZDKI' OR 'ZDKJ' OR 'ZDKK' OR
+             'ZDKL' OR 'ZDKM'.  "2018.10.25 추가.
+          gt_main-kzwi1 = gt_data-kzwi1.
+          gt_main-kzwi2 = gt_data-netwr - ( gt_data-kzwi1 +
+          gt_data-kzwi2 + gt_data-kzwi4 ).
+          gt_main-kzwi3 = gt_data-kzwi2.
+          gt_main-kzwi4 = gt_data-kzwi4.
+        WHEN 'ZDKB'.
+          gt_main-kzwi1 = gt_data-netwr - gt_data-kzwi2.
+          gt_main-kzwi3 = gt_data-kzwi2 + gt_data-kzwi3.
+          gt_main-kzwi4 = gt_data-kzwi3 * -1.
+        WHEN OTHERS.
+          gt_main-kzwi1 = gt_data-netwr - ( gt_data-kzwi2 ).
+          gt_main-kzwi2 = gt_data-kzwi2.
+          gt_main-kzwi5 = gt_data-kzwi5.
+          gt_main-kzwi6 = gt_data-kzwi6.
+      ENDCASE.
+      gt_main-fkimg = gt_data-fkimg.
+      gt_main-netwr = gt_data-netwr.
+      gt_main-kzwi7 = gt_data-kzwi7.
+    ENDIF.
+
+    CLEAR : g_date, g_week.
+    g_date = gt_data-fkdat.
+
+    CALL FUNCTION 'DATE_GET_WEEK'
+      EXPORTING
+        date = g_date
+      IMPORTING
+        week = g_week.
+
+*  CONCATENATE s_inptu-low(04) s_inptu-low+5(02) INTO l_week.
+    CONCATENATE g_week(04) '.' g_week+4(02) INTO g_week2.
+
+    " 20130225 월별검색 추가
+    gt_main-fkwek = g_week2.
+    gt_main-vkorg = gt_data-vkorg.
+    gt_main-vtweg = gt_data-vtweg.
+    gt_main-kunnr = gt_data-kunnr.
+    gt_main-matnr = gt_data-matnr.
+    gt_main-vrkme = gt_data-vrkme.
+    gt_main-waerk = gt_data-waerk.
+    gt_main-bsark = gt_data-bsark.
+    gt_main-wausd = gt_data-wausd.
+    gt_main-normt = gt_data-normt.
+* 20150109 추가 MMD03
+    gt_main-augru = gt_data-augru.  " 오더사유
+* 20150109
+
+
+*& 설계처 가져오기
+    CASE gt_data-auaru(2).
+      WHEN 'ZD'.                              "반품에 대한 설계처 가져오기
+        PERFORM  get_vbpa_kunwe           USING gt_data-zuonr
+                                       CHANGING gt_main-kunwe.
+
+      WHEN OTHERS.
+        PERFORM  get_vbpa_kunwe           USING gt_data-aubel
+                                       CHANGING gt_main-kunwe.
+    ENDCASE.
+
+
+    COLLECT gt_main.      CLEAR: gt_main.
+  ENDLOOP.
+
+
+
+ENDFORM.                    " COLLECT_P_RADI4
+*&---------------------------------------------------------------------*
+*&      Form  CHECK_AUTHORIZATION
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+FORM check_authorization CHANGING p_flag.
+
+  DATA : l_subrc(1).
+  DATA : lt_values LIKE TABLE OF usvalues WITH HEADER LINE.
+  DATA : l_object LIKE usvalues-objct,
+         l_field  LIKE usvalues-field,
+         l_fldtxt TYPE string.
+  DATA : l_high TYPE bkpf-bukrs.
+
+  l_fldtxt = '회사코드'.
+  l_object = 'F_BKPF_BUK'.
+  l_field = 'BUKRS'.
+
+  PERFORM check_ranges_values(zauth_check) IF FOUND
+                                           TABLES lt_values
+                                                  s_bukrs
+                                           USING l_fldtxt
+                                                 l_object
+                                                 l_field
+                                           CHANGING p_flag.
+
+  CHECK p_flag IS INITIAL.
+
+  PERFORM auth_check1(zauth_check) USING 'F_BKPF_BUK'
+  'ACTVT' '03'
+  CHANGING l_subrc.
+
+  IF l_subrc <> 0.
+    MESSAGE s999 WITH '회사코드' s_bukrs '에 대한 권한이 없습니다.'
+    DISPLAY LIKE 'E'.
+    p_flag = 'X'.
+  ENDIF.
+ENDFORM.                    " CHECK_AUTHORIZATION
