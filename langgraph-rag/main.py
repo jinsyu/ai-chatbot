@@ -7,7 +7,9 @@ import json
 import asyncio
 import os
 from dotenv import load_dotenv
-from langgraph_rag import TextToSqlAgent
+# 기존 TextToSqlAgent 대신 LangChain SQL Agent 사용
+from langchain_sql_agent import LangChainSQLAgent
+from langgraph_rag import TextToSqlAgent  # RAG 파이프라인용 (임시 유지)
 import uvicorn
 
 load_dotenv()
@@ -27,25 +29,31 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 전역 Text-to-SQL 에이전트 인스턴스
-text_to_sql_agent: Optional[TextToSqlAgent] = None
+# 전역 SQL 에이전트 인스턴스
+sql_agent: Optional[LangChainSQLAgent] = None
 
-def get_text_to_sql_agent() -> TextToSqlAgent:
-    """Text-to-SQL 에이전트 인스턴스 가져오기 (싱글톤)"""
-    global text_to_sql_agent
-    if text_to_sql_agent is None:
+def get_sql_agent() -> LangChainSQLAgent:
+    """LangChain SQL Agent 인스턴스 가져오기 (싱글톤)"""
+    global sql_agent
+    if sql_agent is None:
         db_url = os.getenv("DATABASE_URL")
         if not db_url:
             raise ValueError("DATABASE_URL environment variable not set")
-        text_to_sql_agent = TextToSqlAgent(db_url)
-        print("✅ Text-to-SQL Agent initialized")
-    return text_to_sql_agent
+        # LangChain SQL Agent 초기화
+        sql_agent = LangChainSQLAgent(
+            db_url=db_url,
+            max_iterations=5,  # 최대 5번 재시도
+            enable_streaming=False,  # API에서는 스트리밍 비활성화
+            verbose=True  # 상세 로그 활성화
+        )
+        print("✅ LangChain SQL Agent initialized")
+    return sql_agent
 
 @app.on_event("startup")
 async def startup_event():
     """서버 시작 시 에이전트 초기화"""
     try:
-        get_text_to_sql_agent()
+        get_sql_agent()  # LangChain SQL Agent 초기화
         print("✅ All agents initialized successfully")
     except Exception as e:
         print(f"❌ Failed to initialize agents: {e}")
@@ -72,7 +80,7 @@ class TextToSqlResponse(BaseModel):
     error: Optional[str]
     row_count: Optional[int]
     truncated: Optional[bool]
-
+    metrics: Optional[Dict[str, Any]]  # 성능 메트릭 추가
 
 async def stream_langgraph_response(messages: List[Message], files_content: Optional[List[str]] = None, file_names: Optional[List[str]] = None) -> AsyncGenerator[str, None]:
     """새로운 RAG 파이프라인 v2를 사용한 스트리밍 응답 생성"""
@@ -221,31 +229,36 @@ async def chat(request: ChatRequest):
 @app.post("/api/text-to-sql", response_model=TextToSqlResponse)
 async def text_to_sql(request: TextToSqlRequest):
     """
-    Text-to-SQL API 엔드포인트
+    Text-to-SQL API 엔드포인트 (LangChain SQL Agent 사용)
     자연어 쿼리를 SQL로 변환하고 실행
+    
+    LangChain의 ReAct 패턴을 사용하여 더 강력한 에러 복구와
+    동적 문제 해결 능력을 제공합니다.
     
     Parameters:
     - query: 자연어 질문
-    - conversation_history: 이전 대화 내역 (선택)
+    - conversation_history: 이전 대화 내역 (선택, 현재 미사용)
     - max_rows: 반환할 최대 행 수 (선택, 기본 1000, 최대 10000)
     """
     try:
-        agent = get_text_to_sql_agent()
+        # LangChain SQL Agent 가져오기
+        agent = get_sql_agent()
         
         # 최대 행 수 설정
         if request.max_rows:
-            agent.node.max_rows = min(request.max_rows, 10000)  # 최대 10,000행
-            agent.node.default_limit = min(request.max_rows, 10000)
+            agent.set_max_rows(request.max_rows)
         
-        # 에이전트 실행
+        # 에이전트 실행 (ReAct 루프)
         result = await agent.run(
             query=request.query,
-            conversation_history=request.conversation_history
+            session_id=None  # 세션 관리는 향후 구현
         )
         
         # 결과 처리
-        row_count = len(result.get("results", [])) if result.get("results") else 0
-        truncated = row_count >= agent.node.max_rows
+        row_count = result.get("metrics", {}).get("result_count", 0)
+        truncated = row_count >= agent.max_rows
+        
+      
         
         return TextToSqlResponse(
             success=result.get("success", False),
@@ -255,20 +268,19 @@ async def text_to_sql(request: TextToSqlRequest):
             results=result.get("results"),
             error=result.get("error"),
             row_count=row_count,
-            truncated=truncated
+            truncated=truncated,
         )
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 async def stream_text_to_sql_response(query: str, max_rows: int = 1000) -> AsyncGenerator[str, None]:
-    """Text-to-SQL 스트리밍 응답"""
+    """Text-to-SQL 스트리밍 응답 (LangChain SQL Agent)"""
     try:
-        agent = get_text_to_sql_agent()
+        agent = get_sql_agent()
         
         # 최대 행 수 설정
-        agent.node.max_rows = min(max_rows, 10000)
-        agent.node.default_limit = min(max_rows, 10000)
+        agent.set_max_rows(max_rows)
         
         # 단계별 진행 상황 전송
         yield f"data: {json.dumps({'step': 'Analyzing database schema...'})}\n\n"
@@ -341,8 +353,10 @@ async def text_to_sql_stream(request: TextToSqlRequest):
 async def get_schema():
     """데이터베이스 스키마 정보 반환"""
     try:
-        agent = get_text_to_sql_agent()
-        schema_info = agent.node.get_detailed_schema()
+        agent = get_sql_agent()
+        # LangChain SQL Agent는 SQLDatabase 객체를 사용
+        # 스키마 정보를 직접 가져옴
+        schema_info = agent.db.get_table_info()
         
         # 스키마를 구조화된 형태로 파싱
         tables = []
@@ -387,17 +401,60 @@ async def get_schema():
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/api/text-to-sql/metrics")
+async def get_sql_metrics():
+    """
+    SQL Agent 성능 메트릭 조회
+    
+    누적된 쿼리 실행 통계를 반환합니다.
+    - 총 쿼리 수
+    - 성공률
+    - 평균 실행 시간
+    - 평균 토큰 사용량
+    - 최근 쿼리 정보
+    """
+    try:
+        agent = get_sql_agent()
+        metrics = agent.get_metrics_summary()
+        return metrics
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/text-to-sql/clear-metrics")
+async def clear_sql_metrics():
+    """
+    SQL Agent 메트릭 초기화
+    
+    누적된 성능 메트릭을 모두 초기화합니다.
+    """
+    try:
+        agent = get_sql_agent()
+        agent.clear_metrics()
+        return {"message": "메트릭이 초기화되었습니다"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/api/health")
 async def health_check():
     """헬스 체크"""
     try:
-        agent = get_text_to_sql_agent()
+        agent = get_sql_agent()
+        # 데이터베이스 연결 테스트
+        db_connected = False
+        try:
+            # 간단한 쿼리로 연결 확인
+            agent.db.run("SELECT 1")
+            db_connected = True
+        except:
+            pass
+            
         return {
             "status": "healthy",
-            "service": "Text-to-SQL & RAG API",
-            "database": "connected" if agent.node.engine else "disconnected",
-            "max_rows": agent.node.max_rows,
-            "default_limit": agent.node.default_limit
+            "service": "Text-to-SQL & RAG API (LangChain SQL Agent)",
+            "database": "connected" if db_connected else "disconnected",
+            "max_rows": agent.max_rows,
+            "default_limit": agent.default_limit,
+            "agent_type": "LangChain ReAct SQL Agent"
         }
     except:
         return {

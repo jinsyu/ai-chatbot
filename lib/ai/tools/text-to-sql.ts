@@ -4,6 +4,19 @@ import { z } from 'zod';
 import type { Session } from 'next-auth';
 import type { ChatMessage } from '@/lib/types';
 
+
+interface TextToSqlResponse {
+  success: boolean;
+  query: string;
+  sql?: string;
+  response?: string;
+  results?: any[];
+  error?: string;
+  row_count?: number;
+  truncated?: boolean;
+  metrics?: any;
+}
+
 interface TextToSqlProps {
   session: Session;
   dataStream: UIMessageStreamWriter<ChatMessage>;
@@ -42,8 +55,10 @@ export const textToSql = ({ session, dataStream }: TextToSqlProps) =>
           throw new Error(`API error: ${response.statusText}`);
         }
 
-        const result = await response.json();
-        console.log('[Text-to-SQL] API Response:', result);
+        const result: TextToSqlResponse = await response.json();
+        console.log('[Text-to-SQL] API Response:', JSON.stringify(result, null, 2));
+        console.log('[Text-to-SQL] Results count:', result.results?.length);
+        console.log('[Text-to-SQL] Row count:', result.row_count);
 
         if (result.success && !result.error) {
           // SQL 쿼리 전송
@@ -64,20 +79,30 @@ export const textToSql = ({ session, dataStream }: TextToSqlProps) =>
             });
           }
 
-          // 시각화 데이터가 있는 경우 차트 데이터 전송
-          if (result.visualization) {
-            console.log('[Text-to-SQL] Visualization data available:', result.visualization.type);
-            
-            dataStream.write({
-              type: 'data-visualization',
-              data: result.visualization,
-              transient: true,
-            });
-          }
 
-          // 결과 테이블 데이터 전송 (Sheet artifact처럼 처리 가능)
+          // 데이터가 있으면 처리
           if (result.results && result.results.length > 0) {
+            const queryData = result.results;
+            console.log('[Text-to-SQL] Creating Sheet artifact with', queryData.length, 'rows');
             const id = generateUUID();
+            
+            // CSV 형식으로 변환 - 헤더 포함
+            const headers = Object.keys(queryData[0]);
+            console.log('[Text-to-SQL] Headers:', headers);
+            const csvData = [
+              headers.join(','),
+              ...queryData.map((row: any) => 
+                headers.map((h: string) => {
+                  const val = row[h];
+                  if (val === null || val === undefined) return '';
+                  if (typeof val === 'string' && val.includes(',')) {
+                    return `"${val.replace(/"/g, '""')}"`;
+                  }
+                  return String(val);
+                }).join(',')
+              )
+            ].join('\n');
+            console.log('[Text-to-SQL] CSV data (first 200 chars):', csvData.substring(0, 200));
             
             // Sheet artifact로 변환
             dataStream.write({
@@ -98,22 +123,6 @@ export const textToSql = ({ session, dataStream }: TextToSqlProps) =>
               transient: true,
             });
 
-            // CSV 형식으로 변환
-            const headers = Object.keys(result.results[0]);
-            const csvData = [
-              headers.join(','),
-              ...result.results.map((row: any) => 
-                headers.map((h: string) => {
-                  const val = row[h];
-                  if (val === null || val === undefined) return '';
-                  if (typeof val === 'string' && val.includes(',')) {
-                    return `"${val.replace(/"/g, '""')}"`;
-                  }
-                  return String(val);
-                }).join(',')
-              )
-            ].join('\n');
-
             dataStream.write({
               type: 'data-content',
               data: csvData,
@@ -125,14 +134,20 @@ export const textToSql = ({ session, dataStream }: TextToSqlProps) =>
               data: null,
               transient: true,
             });
+            
+            console.log('[Text-to-SQL] Sheet artifact created successfully');
           }
 
+          // 메시지 생성
+          const enhancedMessage = result.response || `Query executed successfully. Retrieved ${result.row_count} rows.`;
+          console.log('[Text-to-SQL] Final enhanced message:', enhancedMessage);
+          
           return {
             success: true,
             query: result.query,
             sql: result.sql,
             rowCount: result.row_count,
-            message: result.response || `Query executed successfully. Retrieved ${result.row_count} rows.`,
+            message: enhancedMessage,
           };
         } else {
           // 에러가 있어도 사용자에게 메시지 반환
