@@ -7,9 +7,7 @@ import json
 import asyncio
 import os
 from dotenv import load_dotenv
-# 기존 TextToSqlAgent 대신 LangChain SQL Agent 사용
 from langchain_sql_agent import LangChainSQLAgent
-from langgraph_rag import TextToSqlAgent  # RAG 파이프라인용 (임시 유지)
 import uvicorn
 
 load_dotenv()
@@ -258,8 +256,6 @@ async def text_to_sql(request: TextToSqlRequest):
         row_count = result.get("metrics", {}).get("result_count", 0)
         truncated = row_count >= agent.max_rows
         
-      
-        
         return TextToSqlResponse(
             success=result.get("success", False),
             query=request.query,
@@ -269,6 +265,7 @@ async def text_to_sql(request: TextToSqlRequest):
             error=result.get("error"),
             row_count=row_count,
             truncated=truncated,
+            metrics=result.get("metrics")
         )
         
     except Exception as e:
