@@ -58,7 +58,7 @@ def get_default_parameters(conn):
     params['ERKRS'] = params['BUKRS']
     
     return params
-r
+
 def import_copa_data(erkrs=None, date_from=None, date_to=None, bukrs=None):
     """
     CO-PA 데이터 import

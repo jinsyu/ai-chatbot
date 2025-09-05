@@ -76,13 +76,13 @@ class TextToSqlNode:
             db_url,
             pool_size=20,  # 커넥션 풀 크기 증가
             max_overflow=40,  # 최대 오버플로우 증가
-            pool_timeout=30,  # 타임아웃 증가
+            pool_timeout=1200,  # 타임아웃 20분으로 증가
             pool_recycle=3600  # 1시간마다 커넥션 재활용
         )
         self.llm = get_llm()
         self.max_retries = 3
-        self.max_rows = 10000  # 최대 10,000행 반환
-        self.default_limit = 1000  # 기본 LIMIT 1000
+        self.max_rows = 100000  # 최대 10,000행 반환
+        self.default_limit = 500000  # 기본 LIMIT 50만건
     
     def get_detailed_schema(self) -> str:
         """데이터베이스 스키마 정보를 상세히 추출"""

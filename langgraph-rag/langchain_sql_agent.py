@@ -119,9 +119,9 @@ class LangChainSQLAgent:
     def __init__(
         self, 
         db_url: str,
-        max_iterations: int = 5,
+        max_iterations: int = 50,
         enable_streaming: bool = False,
-        verbose: bool = False
+        verbose: bool = True
     ):
         """
         SQL Agent 초기화
@@ -141,8 +141,8 @@ class LangChainSQLAgent:
         self.metrics_history: List[AgentMetrics] = []
         
         # 쿼리 결과 제한 설정
-        self.max_rows = 1000  # 최대 반환 행 수
-        self.default_limit = 100  # 기본 LIMIT 값
+        self.max_rows = 10000  # 최대 반환 행 수 (1만개로 조정)
+        self.default_limit = 1000  # 기본 LIMIT 값 (1000개로 조정)
         
         # 컴포넌트 초기화
         self._initialize_components()
@@ -156,12 +156,12 @@ class LangChainSQLAgent:
         """
         
         # 1. 데이터베이스 연결 설정
-        # SQLAlchemy를 통해 PostgreSQL 데이터베이스에 연결
+        # SQLAlchemy를 통해 SQLite 데이터베이스에 연결
         self.db = SQLDatabase.from_uri(
             self.db_url,
             sample_rows_in_table_info=3,  # 스키마 정보에 샘플 데이터 3행 포함
             include_tables=None,  # None = 모든 테이블 포함
-            view_support=True  # View도 테이블처럼 쿼리 가능
+            view_support=True  # SQLite는 view_support를 False로 설정 (버그 회피)
         )
         
         # 2. Azure OpenAI LLM 설정
@@ -172,19 +172,51 @@ class LangChainSQLAgent:
             azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),
             api_version=os.getenv("AZURE_OPENAI_API_VERSION", "2024-08-01-preview"),
             temperature=0,  # 0 = 결정론적 (SQL은 정확해야 하므로)
-            max_tokens=2000  # SQL 쿼리와 응답에 충분한 토큰
+            max_tokens=20000  # SQL 쿼리와 응답에 충분한 토큰
         )
         
         # 3. 시스템 프롬프트 설정
         # 에이전트의 행동 지침과 SQL 생성 규칙을 정의
         prefix = """You are an expert SQL analyst with deep expertise in PostgreSQL.
 
-## 극도로 중요: 반드시 SQL 쿼리를 실행해야 합니다!
+## 극도로 중요: SQL 쿼리 작성 규칙!
+
+**필수 규칙**:
+1. SELECT 문에는 반드시 컬럼명을 지정해야 함 (SELECT * 또는 SELECT col1, col2)
+2. SELECT 바로 뒤에 FROM을 쓰면 안됨 (잘못된 예: SELECT FROM table)
+3. 빈 SELECT는 절대 금지 (SELECT 다음에는 반드시 컬럼이나 * 가 와야 함)
+
+## 테이블 선택 가이드 (매우 중요!):
+- **매출/판매 관련**: sap_zsdr0340_sales_detail 테이블 사용
+  - 청구일, 청구금액, 판매처명, 자재명 등
+- **재고 관련**: sap_zmmr0016_inventory 테이블 사용  
+  - 재고구분명, 총재고수량, 재고금액, 가용재고수량 등
+- **자재마스터 관련**: sap_zmmr0001_materials 테이블 사용
+  - 자재, 자재명(한글), 자재명(영문), 자재그룹1명~11명, 판가, 도매가, 소비자가 등
+  - 제품군별 분석 = 자재그룹7명 컬럼 사용
+  - 제품유형별 분석 = 자재그룹6명 컬럼 사용
+- **부족수량 관련**: sap_zsdr0062_sales_orders 테이블 사용 (중요!)
+  - 판매오더, 오더수량, 가용재고, 납품가능수량, 납품지시수량, 출고수량 등
+  - 부족수량 = 오더수량 - 납품가능수량 으로 계산
+
+## 복잡한 쿼리 처리 전략 (중요!):
+복잡한 분석이 필요한 경우 단계별로 쿼리를 실행하세요:
+1. **먼저 핵심 데이터 찾기**: 예) 부족수량 상위 1개 자재 찾기
+2. **그 다음 관련 데이터 조회**: 예) 해당 자재의 판매 데이터
+3. **마지막으로 상세 정보 추가**: 예) 자재 마스터 정보
+
+절대 한 번에 모든 것을 JOIN하려 하지 마세요! 각 단계별로 sql_db_query를 실행하세요.
+
+반드시 질문의 키워드를 보고 올바른 테이블을 선택하세요:
+- "재고", "재고구분" → sap_zmmr0016_inventory
+- "매출", "청구", "판매" → sap_zsdr0340_sales_detail  
+- "자재", "제품", "자재그룹", "가격" → sap_zmmr0001_materials
+- **"부족수량", "판매오더", "오더수량", "납품가능" → sap_zsdr0062_sales_orders**
 
 사용자가 데이터를 요청할 때는 반드시:
 1. sql_db_list_tables로 테이블 목록 확인
 2. sql_db_schema로 테이블 구조 확인
-3. SQL 쿼리 작성
+3. **올바른 SQL 쿼리 작성** (SELECT 뒤에 반드시 컬럼 지정)
 4. **sql_db_query로 쿼리 실행** (필수! 텍스트로만 답변하지 말고 실제 데이터를 보여주세요)
 5. 실제 쿼리 결과를 반환
 
@@ -195,10 +227,17 @@ class LangChainSQLAgent:
 
 ## 엄격한 규칙
 1. **보안 최우선**: SELECT 쿼리만 허용. INSERT/UPDATE/DELETE/DROP 절대 금지
-2. **효율성**: 대용량 결과 방지를 위해 항상 LIMIT 추가 (기본값: 100)
+2. **효율성**: 대용량 결과 방지를 위해 항상 LIMIT 추가 (기본값: 1000)
 3. **정확성**: 대소문자 구분이 필요한 컬럼명은 큰따옴표 사용
+4. **복잡한 쿼리 처리**: 
+   - 서브쿼리나 복잡한 JOIN이 필요한 경우, 단계적으로 접근
+   - 먼저 간단한 쿼리로 필요한 데이터를 확인
+   - 그 다음 복잡한 쿼리 작성
+   - 대용량 테이블 JOIN 시 필터 조건을 먼저 적용
 
 ## 쿼리 작성 가이드
+- **중요**: SELECT 문에는 반드시 컬럼명을 지정 (SELECT * 또는 SELECT column1, column2)
+- SELECT 뒤에 컬럼 없이 FROM을 바로 쓰면 안됨 (잘못된 예: SELECT FROM table)
 - 명시적 JOIN 구문 사용 (INNER JOIN, LEFT JOIN 등)
 - NULL 처리는 IS NULL/IS NOT NULL 사용
 - 텍스트 범위 컬럼 (예: "10~50")은 숫자가 아닌 TEXT로 처리
@@ -224,21 +263,30 @@ class LangChainSQLAgent:
 {agent_scratchpad}"""
         
         # 4. SQL Agent 생성
-        # create_sql_agent를 사용하여 모든 컴포넌트를 통합
+        # sql_db_query_checker를 제외한 도구 목록 생성
+        from langchain_community.agent_toolkits.sql.toolkit import SQLDatabaseToolkit
+        
+        toolkit = SQLDatabaseToolkit(db=self.db, llm=self.llm)
+        # query_checker 제외 - 이것이 문제의 원인!
+        tools = [tool for tool in toolkit.get_tools() if tool.name != 'sql_db_query_checker']
+        
         self.agent = create_sql_agent(
             llm=self.llm,
             db=self.db,
+            tools=tools,  # query_checker 제외한 도구만 사용
             agent_type=AgentType.OPENAI_FUNCTIONS,  # OpenAI 함수 호출 방식 사용
             verbose=self.verbose,  # 디버깅용 상세 출력
             max_iterations=self.max_iterations,  # ReAct 최대 반복 횟수
-            max_execution_time=60,  # 최대 실행 시간 60초 (무한 루프 방지)
+            max_execution_time=1200,  # 최대 실행 시간 1200초 (20분)로 증가
             early_stopping_method="force",  # 시간/반복 제한 도달 시 강제 종료
             handle_parsing_errors=True,  # 파싱 에러 자동 처리
             prefix=prefix,  # 시스템 프롬프트 앞부분
             suffix=suffix,  # 시스템 프롬프트 뒷부분
             format_instructions=None,  # 기본 포맷 사용
             input_variables=None,  # 기본 변수 사용
-            return_intermediate_steps=True  # 중간 단계 반환
+            return_intermediate_steps=True,  # 중간 단계 반환
+            return_direct=False,  # False로 설정하여 전체 응답 받기
+            agent_executor_kwargs={"return_intermediate_steps": True}  # 중간 단계 강제 반환
         )
     
     def _create_callbacks(self, metrics: AgentMetrics):
@@ -305,10 +353,27 @@ class LangChainSQLAgent:
             # 에이전트 호출 (ReAct 루프 실행)
             # SQL 실행을 강제하기 위해 명령 추가
             enhanced_query = f"{query}\n\n중요: 반드시 sql_db_query 도구를 사용하여 SQL을 실행하고 실제 데이터를 반환하세요."
-            result = await self.agent.ainvoke(
-                {"input": enhanced_query},
-                config={"callbacks": callbacks}
-            )
+            
+            # 타임아웃 처리를 위한 asyncio.wait_for 사용
+            import asyncio
+            try:
+                if self.verbose:
+                    print(f"⏱️ 에이전트 호출 시작 (최대 {self.max_iterations} 반복)")
+                    
+                result = await asyncio.wait_for(
+                    self.agent.ainvoke(
+                        {"input": enhanced_query},
+                        config={"callbacks": callbacks}
+                    ),
+                    timeout=1200  # 20분 타임아웃
+                )
+            except asyncio.TimeoutError:
+                if self.verbose:
+                    print(f"⚠️ 에이전트 실행 타임아웃 (20분 초과)")
+                result = {
+                    "output": "시스템 실행 시간이 초과되어 데이터를 가져올 수 없습니다. 쿼리를 단순화해 주세요.",
+                    "intermediate_steps": []
+                }
             
             execution_time = time.time() - start_time
             
@@ -320,22 +385,49 @@ class LangChainSQLAgent:
             results = None
             intermediate_steps = result.get("intermediate_steps", [])
             
-            for action, observation in intermediate_steps:
+            if self.verbose:
+                print(f"📍 중간 단계 수: {len(intermediate_steps)}")
+                
+            for i, (action, observation) in enumerate(intermediate_steps):
+                # 도구 호출 카운트 증가
+                if hasattr(action, 'tool'):
+                    metrics.tool_calls += 1
+                    if self.verbose:
+                        print(f"  Step {i+1}: 도구 '{action.tool}' 호출")
+                        if hasattr(action, 'tool_input'):
+                            print(f"    입력: {str(action.tool_input)[:200]}...")
+                
                 # sql_db_query 액션에서 SQL 추출
                 if hasattr(action, 'tool') and action.tool == 'sql_db_query':
                     sql_query = action.tool_input
+                    # tool_input이 딕셔너리인 경우 query 키에서 추출
+                    if isinstance(sql_query, dict):
+                        sql_query = sql_query.get('query', str(sql_query))
+                    else:
+                        sql_query = str(sql_query)
+                    
                     if self.verbose:
-                        print(f"🔍 SQL 쿼리 발견: {sql_query[:100]}...")
+                        print(f"🔍 SQL 쿼리 발견: {sql_query[:100] if len(sql_query) > 100 else sql_query}...")
                     metrics.sql_generated = sql_query
                     
                     # observation에서 결과 파싱 시도
                     if observation:
+                        if self.verbose:
+                            print(f"    결과 크기: {len(str(observation))} 문자")
+                            print(f"    결과 내용: {str(observation)[:200]}...")
                         # SQLDatabase.run의 결과는 텍스트 형식이므로 파싱 필요
-                        results = self._parse_sql_observation(observation)
+                        results = self._parse_sql_observation(str(observation))
                         if results:
                             metrics.result_count = len(results)
                             if self.verbose:
                                 print(f"📊 쿼리 결과: {len(results)}개 행")
+                        else:
+                            # 결과가 리스트 형태인 경우 직접 처리
+                            if isinstance(observation, list):
+                                results = observation
+                                metrics.result_count = len(results)
+                                if self.verbose:
+                                    print(f"📊 쿼리 결과: {len(results)}개 행 (직접)")
             
             # intermediate_steps에서 SQL을 찾지 못한 경우 output에서 추출
             if not sql_query:
