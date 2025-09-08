@@ -5,7 +5,7 @@ ReAct (Reasoning + Acting) 패턴을 사용하여 동적으로 문제 해결
 """
 
 from typing import List, Dict, Any, Optional
-from langchain_openai import AzureChatOpenAI
+from langchain_openai import AzureChatOpenAI, ChatOpenAI
 from langchain_community.utilities import SQLDatabase
 from langchain_community.agent_toolkits import create_sql_agent
 from langchain.agents.agent_types import AgentType
@@ -164,16 +164,30 @@ class LangChainSQLAgent:
             view_support=True  # SQLite는 view_support를 False로 설정 (버그 회피)
         )
         
-        # 2. Azure OpenAI LLM 설정
-        # SQL 생성에 특화된 설정으로 LLM 초기화
-        self.llm = AzureChatOpenAI(
-            deployment_name=os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME", "gpt-4o"),
-            api_key=os.getenv("AZURE_OPENAI_API_KEY"),
-            azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),
-            api_version=os.getenv("AZURE_OPENAI_API_VERSION", "2024-08-01-preview"),
-            temperature=0,  # 0 = 결정론적 (SQL은 정확해야 하므로)
-            max_tokens=20000  # SQL 쿼리와 응답에 충분한 토큰
-        )
+        # 2. LLM 설정 - LMStudio 또는 Azure OpenAI 선택
+        use_lmstudio = os.getenv("USE_LMSTUDIO", "false").lower() == "true"
+        
+        if use_lmstudio:
+            # LMStudio 로컬 모델 사용 (OpenAI 호환 API)
+            self.llm = ChatOpenAI(
+                base_url=os.getenv("LMSTUDIO_BASE_URL", "http://localhost:1234/v1"),
+                api_key="lm-studio",  # LMStudio는 API 키가 필요없지만 필수 파라미터이므로 더미 값 사용
+                model=os.getenv("LMSTUDIO_MODEL", "local-model"),  # LMStudio에서 로드한 모델 이름
+                temperature=0,  # 0 = 결정론적 (SQL은 정확해야 하므로)
+                max_tokens=4096  # 로컬 모델은 토큰 제한이 있을 수 있음
+            )
+            print(f"🤖 Using LMStudio local model at {os.getenv('LMSTUDIO_BASE_URL', 'http://localhost:1234/v1')}")
+        else:
+            # Azure OpenAI 사용 (기존 코드)
+            self.llm = AzureChatOpenAI(
+                deployment_name=os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME", "gpt-4o"),
+                api_key=os.getenv("AZURE_OPENAI_API_KEY"),
+                azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),
+                api_version=os.getenv("AZURE_OPENAI_API_VERSION", "2024-08-01-preview"),
+                temperature=0,  # 0 = 결정론적 (SQL은 정확해야 하므로)
+                max_tokens=20000  # SQL 쿼리와 응답에 충분한 토큰
+            )
+            print("☁️ Using Azure OpenAI")
         
         # 3. 시스템 프롬프트 설정
         # 에이전트의 행동 지침과 SQL 생성 규칙을 정의

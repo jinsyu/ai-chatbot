@@ -72,7 +72,7 @@ export function SidebarUserNav({ user }: { user: User }) {
             side="top"
             className="w-[--radix-popper-anchor-width]"
           >
-            <DropdownMenuItem
+            {/* <DropdownMenuItem
               data-testid="user-nav-item-theme"
               className="cursor-pointer"
               onSelect={() =>
@@ -80,8 +80,7 @@ export function SidebarUserNav({ user }: { user: User }) {
               }
             >
               {`테마 변경 ${resolvedTheme === "light" ? "(어두운)" : "(밝은)"}`}
-              {/* Toggle ${resolvedTheme === "light" ? "dark" : "light"} mode */}
-            </DropdownMenuItem>
+            </DropdownMenuItem> */}
             <DropdownMenuSeparator />
             <DropdownMenuItem asChild data-testid="user-nav-item-auth">
               <button
